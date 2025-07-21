@@ -9,8 +9,14 @@ time of this writing functionality is extremely narrow.
 
 ## Usage
 
+GPX Wrench uses subcommands to organize its functionality:
+
 ```bash
-cat input.gpx | cargo run > output.gpx
+# Show available commands
+cargo run -- --help
+
+# Example trimming:
+cat input.gpx | cargo run -- trim > output.gpx
 ```
 
 ## Development
