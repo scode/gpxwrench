@@ -92,8 +92,16 @@ fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn Err
 }
 
 fn filter_xml_by_time(input: &[u8], threshold: OffsetDateTime) -> Result<(), Box<dyn Error>> {
+    filter_xml_by_time_to_writer(input, threshold, io::stdout())
+}
+
+fn filter_xml_by_time_to_writer<W: Write>(
+    input: &[u8],
+    threshold: OffsetDateTime,
+    output: W,
+) -> Result<(), Box<dyn Error>> {
     let mut reader = Reader::from_reader(input);
-    let mut writer = Writer::new(io::stdout());
+    let mut writer = Writer::new(output);
     let mut buf = Vec::new();
 
     let mut in_trkpt = false;
@@ -215,4 +223,144 @@ fn filter_xml_by_time(input: &[u8], threshold: OffsetDateTime) -> Result<(), Box
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::OffsetDateTime;
+
+    const SAMPLE_GPX: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <name>Test Track</name>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <ele>100</ele>
+        <time>2023-01-01T10:00:00Z</time>
+        <extensions>
+          <ns3:TrackPointExtension xmlns:ns3="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+            <ns3:hr>150</ns3:hr>
+          </ns3:TrackPointExtension>
+        </extensions>
+      </trkpt>
+      <trkpt lat="37.7750" lon="-122.4195">
+        <ele>101</ele>
+        <time>2023-01-01T10:00:02Z</time>
+        <extensions>
+          <ns3:TrackPointExtension xmlns:ns3="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+            <ns3:hr>155</ns3:hr>
+          </ns3:TrackPointExtension>
+        </extensions>
+      </trkpt>
+      <trkpt lat="37.7751" lon="-122.4196">
+        <ele>102</ele>
+        <time>2023-01-01T10:00:10Z</time>
+        <extensions>
+          <ns3:TrackPointExtension xmlns:ns3="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+            <ns3:hr>160</ns3:hr>
+          </ns3:TrackPointExtension>
+        </extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+    /// Tests that find_minimum_time correctly identifies the earliest timestamp from GPX track points.
+    #[test]
+    fn test_find_minimum_time_with_valid_data() {
+        let result = find_minimum_time(SAMPLE_GPX.as_bytes()).unwrap();
+        assert!(result.is_some());
+
+        let min_time = result.unwrap();
+        let expected = OffsetDateTime::parse(
+            "2023-01-01T10:00:00Z",
+            &time::format_description::well_known::Iso8601::DEFAULT,
+        )
+        .unwrap();
+        assert_eq!(min_time, expected);
+    }
+
+    /// Tests that find_minimum_time returns None when GPX contains track points without time elements.
+    #[test]
+    fn test_find_minimum_time_with_no_time_elements() {
+        let gpx_no_time = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <ele>100</ele>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let result = find_minimum_time(gpx_no_time.as_bytes()).unwrap();
+        assert!(result.is_none());
+    }
+
+    /// Tests that find_minimum_time handles completely empty input gracefully.
+    #[test]
+    fn test_find_minimum_time_with_empty_input() {
+        let result = find_minimum_time(b"").unwrap();
+        assert!(result.is_none());
+    }
+
+    /// Tests that find_minimum_time ignores malformed timestamps and finds valid ones.
+    #[test]
+    fn test_find_minimum_time_with_malformed_time() {
+        let gpx_bad_time = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>invalid-time</time>
+      </trkpt>
+      <trkpt lat="37.7750" lon="-122.4195">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let result = find_minimum_time(gpx_bad_time.as_bytes()).unwrap();
+        assert!(result.is_some());
+        let expected = OffsetDateTime::parse(
+            "2023-01-01T10:00:00Z",
+            &time::format_description::well_known::Iso8601::DEFAULT,
+        )
+        .unwrap();
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    /// Tests that filter_xml_by_time produces valid GPX output that can be parsed by the GPX crate.
+    #[test]
+    fn test_filter_xml_by_time_validates_with_gpx_crate() {
+        use gpx::{Gpx, read};
+
+        let threshold = OffsetDateTime::parse(
+            "2023-01-01T10:00:05Z",
+            &time::format_description::well_known::Iso8601::DEFAULT,
+        )
+        .unwrap();
+
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(SAMPLE_GPX.as_bytes(), threshold, &mut output).unwrap();
+
+        // Verify the output parses correctly with GPX crate
+        let gpx_result: Result<Gpx, _> = read(output.as_slice());
+        assert!(gpx_result.is_ok());
+
+        let gpx = gpx_result.unwrap();
+        assert_eq!(gpx.tracks.len(), 1);
+        assert_eq!(gpx.tracks[0].segments.len(), 1);
+
+        // Should have 2 points (first two within threshold)
+        let points = &gpx.tracks[0].segments[0].points;
+        assert_eq!(points.len(), 2);
+
+        // Verify the times are correct
+        assert!(points[0].time.is_some());
+        assert!(points[1].time.is_some());
+    }
 }
