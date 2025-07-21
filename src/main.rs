@@ -1,17 +1,39 @@
+use clap::{Parser, Subcommand};
 use quick_xml::events::Event;
 use quick_xml::{Reader, Writer};
 use std::error::Error;
 use std::io::{self, Read, Write};
 use time::{Duration, OffsetDateTime};
 
+#[derive(Parser)]
+#[command(name = "gpxwrench", about = "A CLI tool for processing GPX files")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    #[command(about = "Trim GPX track points to keep only those within the first 5 seconds")]
+    Trim,
+}
+
 fn main() {
-    if let Err(e) = run() {
+    let cli = Cli::parse();
+
+    if let Err(e) = run(cli) {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<(), Box<dyn Error>> {
+fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
+    match cli.command {
+        Commands::Trim => trim_command(),
+    }
+}
+
+fn trim_command() -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
 
     let mut input = Vec::new();
