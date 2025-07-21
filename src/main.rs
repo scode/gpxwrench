@@ -6,7 +6,7 @@ use time::{Duration, OffsetDateTime};
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("Error: {}", e);
+        eprintln!("Error: {e}");
         std::process::exit(1);
     }
 }
@@ -43,7 +43,7 @@ fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn Err
             Err(e) => {
                 return Err(
                     format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
-                )
+                );
             }
             Ok(Event::Eof) => break,
             Ok(event) => event.into_owned(),
@@ -109,7 +109,7 @@ fn filter_xml_by_time(input: &[u8], threshold: OffsetDateTime) -> Result<(), Box
             Err(e) => {
                 return Err(
                     format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
-                )
+                );
             }
             Ok(Event::Eof) => break,
             Ok(event) => event.into_owned(),
