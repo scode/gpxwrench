@@ -1,0 +1,9 @@
+[package]
+name = "rust-structopt-skeleton"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+structopt = "0"
+time = { version = "0", features = ["parsing"] }
+quick-xml = "0"
