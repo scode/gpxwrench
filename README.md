@@ -1,11 +1,11 @@
 # GPX Wrench
 
-> **⚠️ WARNING - DEVELOPMENT ONLY ⚠️**
-> **The command line interface is subject to change without notice.**
-> **This software is NOT meant to be used in production or for any critical applications.**
+GPX Wrench is a command-line tool for working with GPX (GPS Exchange Format) files
+(generally limited to whatever functionality the author desired).
 
-GPX Wrench is a command-line tool for working with GPX (GPS Exchange Format) files. At the
-time of this writing functionality is extremely narrow.
+## Sample Data
+
+The repository includes `samples/activity.gpx`, a sample GPX file.
 
 ## Sample Data
 
