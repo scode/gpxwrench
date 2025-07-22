@@ -1,15 +1,9 @@
+use gpxwrench::TrackPoint;
 use quick_xml::events::Event;
 use quick_xml::{Reader, Writer};
 use std::error::Error;
 use std::io::Write;
 use time::OffsetDateTime;
-
-#[derive(Debug, Clone)]
-pub struct TrackPoint {
-    pub lat: f64,
-    pub lon: f64,
-    pub time: OffsetDateTime,
-}
 
 pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn Error>> {
     let mut reader = Reader::from_reader(input);
