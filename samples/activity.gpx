@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="GPX Wrench Sample" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>Sample Activity Track</name>
+    <desc>A sample GPX track showing a cycling activity with idle time before and after</desc>
+  </metadata>
+  <trk>
+    <name>Cycling Activity</name>
+    <trkseg>
+      <!-- Idle time: stationary at start -->
+      <trkpt lat="37.7749" lon="-122.4194">
+        <ele>50.0</ele>
+        <time>2023-06-15T10:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <ele>50.1</ele>
+        <time>2023-06-15T10:00:05Z</time>
+      </trkpt>
+      <trkpt lat="37.7749" lon="-122.4195">
+        <ele>50.0</ele>
+        <time>2023-06-15T10:00:10Z</time>
+      </trkpt>
+
+      <!-- Activity starts: cycling begins -->
+      <trkpt lat="37.7750" lon="-122.4200">
+        <ele>51.0</ele>
+        <time>2023-06-15T10:00:15Z</time>
+      </trkpt>
+      <trkpt lat="37.7755" lon="-122.4210">
+        <ele>52.0</ele>
+        <time>2023-06-15T10:00:20Z</time>
+      </trkpt>
+      <trkpt lat="37.7765" lon="-122.4225">
+        <ele>53.5</ele>
+        <time>2023-06-15T10:00:25Z</time>
+      </trkpt>
+      <trkpt lat="37.7780" lon="-122.4245">
+        <ele>55.0</ele>
+        <time>2023-06-15T10:00:30Z</time>
+      </trkpt>
+      <trkpt lat="37.7800" lon="-122.4270">
+        <ele>56.5</ele>
+        <time>2023-06-15T10:00:35Z</time>
+      </trkpt>
+      <trkpt lat="37.7825" lon="-122.4300">
+        <ele>58.0</ele>
+        <time>2023-06-15T10:00:40Z</time>
+      </trkpt>
+      <trkpt lat="37.7850" lon="-122.4330">
+        <ele>59.5</ele>
+        <time>2023-06-15T10:00:45Z</time>
+      </trkpt>
+      <trkpt lat="37.7875" lon="-122.4360">
+        <ele>61.0</ele>
+        <time>2023-06-15T10:00:50Z</time>
+      </trkpt>
+      <trkpt lat="37.7900" lon="-122.4390">
+        <ele>62.0</ele>
+        <time>2023-06-15T10:00:55Z</time>
+      </trkpt>
+      <trkpt lat="37.7925" lon="-122.4420">
+        <ele>63.5</ele>
+        <time>2023-06-15T10:01:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7950" lon="-122.4450">
+        <ele>65.0</ele>
+        <time>2023-06-15T10:01:05Z</time>
+      </trkpt>
+      <trkpt lat="37.7975" lon="-122.4480">
+        <ele>66.0</ele>
+        <time>2023-06-15T10:01:10Z</time>
+      </trkpt>
+      <trkpt lat="37.8000" lon="-122.4510">
+        <ele>67.5</ele>
+        <time>2023-06-15T10:01:15Z</time>
+      </trkpt>
+
+      <!-- Activity slowing down -->
+      <trkpt lat="37.8020" lon="-122.4535">
+        <ele>68.0</ele>
+        <time>2023-06-15T10:01:20Z</time>
+      </trkpt>
+      <trkpt lat="37.8035" lon="-122.4555">
+        <ele>68.5</ele>
+        <time>2023-06-15T10:01:25Z</time>
+      </trkpt>
+      <trkpt lat="37.8045" lon="-122.4570">
+        <ele>69.0</ele>
+        <time>2023-06-15T10:01:30Z</time>
+      </trkpt>
+
+      <!-- Idle time: stationary at end -->
+      <trkpt lat="37.8050" lon="-122.4575">
+        <ele>69.2</ele>
+        <time>2023-06-15T10:01:35Z</time>
+      </trkpt>
+      <trkpt lat="37.8050" lon="-122.4575">
+        <ele>69.1</ele>
+        <time>2023-06-15T10:01:40Z</time>
+      </trkpt>
+      <trkpt lat="37.8050" lon="-122.4576">
+        <ele>69.0</ele>
+        <time>2023-06-15T10:01:45Z</time>
+      </trkpt>
+      <trkpt lat="37.8050" lon="-122.4576">
+        <ele>69.0</ele>
+        <time>2023-06-15T10:01:50Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>
