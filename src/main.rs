@@ -5,6 +5,13 @@ use std::error::Error;
 use std::io::{self, Read, Write};
 use time::{Duration, OffsetDateTime};
 
+#[derive(Debug, Clone)]
+struct TrackPoint {
+    lat: f64,
+    lon: f64,
+    time: OffsetDateTime,
+}
+
 #[derive(Debug)]
 enum TrimRange {
     Duration { start: Duration, end: Duration },
@@ -77,6 +84,23 @@ enum Commands {
         #[arg(help = "Range specification: DUR1,DUR2 (e.g. 5s,10s) or TS1,TS2 (e.g. 00:05,01:30)")]
         range: String,
     },
+    #[command(about = "Trim GPX to detected activity period based on speed analysis")]
+    TrimToActivity {
+        #[arg(
+            long,
+            short,
+            default_value = "1.0",
+            help = "Minimum speed (m/s) to consider as activity"
+        )]
+        speed_threshold: f64,
+        #[arg(
+            long,
+            short,
+            default_value = "30",
+            help = "Buffer time (seconds) to add before/after detected activity"
+        )]
+        buffer: u64,
+    },
 }
 
 fn main() {
@@ -91,6 +115,10 @@ fn main() {
 fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
     match cli.command {
         Commands::Trim { range } => trim_command(&range),
+        Commands::TrimToActivity {
+            speed_threshold,
+            buffer,
+        } => trim_to_activity_command(speed_threshold, buffer),
     }
 }
 
@@ -322,6 +350,210 @@ fn filter_xml_by_time_to_writer<W: Write>(
     Ok(())
 }
 
+fn trim_to_activity_command(speed_threshold: f64, buffer: u64) -> Result<(), Box<dyn Error>> {
+    let stdin = io::stdin();
+    let mut input = Vec::new();
+    stdin.lock().read_to_end(&mut input)?;
+
+    let track_points = extract_track_points(&input)?;
+
+    if track_points.is_empty() {
+        io::stdout().write_all(&input)?;
+        return Ok(());
+    }
+
+    let (start_time, end_time) = detect_activity_bounds(&track_points, speed_threshold, buffer)?;
+
+    filter_xml_by_time_range(&input, start_time, end_time)?;
+    Ok(())
+}
+
+fn extract_track_points(input: &[u8]) -> Result<Vec<TrackPoint>, Box<dyn Error>> {
+    let mut reader = Reader::from_reader(input);
+    let mut buf = Vec::new();
+    let mut track_points = Vec::new();
+
+    let mut in_trkpt = false;
+    let mut current_lat: Option<f64> = None;
+    let mut current_lon: Option<f64> = None;
+    let mut current_time: Option<OffsetDateTime> = None;
+    let mut in_time_element = false;
+    let mut time_text = String::new();
+
+    loop {
+        let event = match reader.read_event_into(&mut buf) {
+            Err(e) => {
+                return Err(
+                    format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
+                );
+            }
+            Ok(Event::Eof) => break,
+            Ok(event) => event.into_owned(),
+        };
+
+        match event {
+            Event::Start(ref e) => {
+                if e.name().as_ref() == b"trkpt" {
+                    in_trkpt = true;
+                    current_lat = None;
+                    current_lon = None;
+                    current_time = None;
+
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"lat" => {
+                                if let Ok(lat_str) = std::str::from_utf8(&attr.value) {
+                                    current_lat = lat_str.parse().ok();
+                                }
+                            }
+                            b"lon" => {
+                                if let Ok(lon_str) = std::str::from_utf8(&attr.value) {
+                                    current_lon = lon_str.parse().ok();
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                } else if in_trkpt && e.name().as_ref() == b"time" {
+                    in_time_element = true;
+                    time_text.clear();
+                }
+            }
+
+            Event::End(ref e) => {
+                if e.name().as_ref() == b"trkpt" {
+                    if let (Some(lat), Some(lon), Some(time)) =
+                        (current_lat, current_lon, current_time)
+                    {
+                        track_points.push(TrackPoint { lat, lon, time });
+                    }
+                    in_trkpt = false;
+                } else if e.name().as_ref() == b"time" && in_trkpt {
+                    in_time_element = false;
+                    if let Ok(parsed_time) = OffsetDateTime::parse(
+                        &time_text,
+                        &time::format_description::well_known::Iso8601::DEFAULT,
+                    ) {
+                        current_time = Some(parsed_time);
+                    }
+                }
+            }
+
+            Event::Text(ref e) => {
+                if in_trkpt && in_time_element {
+                    time_text.push_str(&e.unescape().unwrap_or_default());
+                }
+            }
+
+            _ => {}
+        }
+
+        buf.clear();
+    }
+
+    Ok(track_points)
+}
+
+/// Calculates the great circle distance between two GPS coordinates using the haversine formula.
+///
+/// This is the standard method for calculating distances on a sphere and is appropriate for
+/// GPS applications because:
+/// 1. It accounts for the Earth's spherical shape (unlike simple Euclidean distance)
+/// 2. It's accurate for short to medium distances typical in GPS tracks
+/// 3. It's computationally efficient compared to more complex ellipsoid formulations
+///
+/// For very precise applications over long distances, ellipsoid-based calculations like
+/// Vincenty's formula would be more accurate, but for activity tracking the haversine
+/// formula provides sufficient precision with much simpler computation.
+///
+/// References:
+/// - R.W. Sinnott, "Virtues of the Haversine", Sky and Telescope, vol. 68, no. 2, 1984, p. 159
+/// - https://en.wikipedia.org/wiki/Haversine_formula
+/// - https://www.movable-type.co.uk/scripts/latlong.html
+fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    const EARTH_RADIUS: f64 = 6371000.0; // Mean Earth radius in meters (WGS84: 6371008.8m)
+
+    // Convert latitude and longitude differences to radians
+    let lat1_rad = lat1.to_radians();
+    let lat2_rad = lat2.to_radians();
+    let delta_lat = (lat2 - lat1).to_radians();
+    let delta_lon = (lon2 - lon1).to_radians();
+
+    // Haversine formula: a = sin²(Δφ/2) + cos φ1 ⋅ cos φ2 ⋅ sin²(Δλ/2)
+    let a = (delta_lat / 2.0).sin().powi(2)
+        + lat1_rad.cos() * lat2_rad.cos() * (delta_lon / 2.0).sin().powi(2);
+
+    // c = 2 ⋅ atan2(√a, √(1−a))
+    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
+
+    // Distance = R ⋅ c (where R is Earth's radius)
+    EARTH_RADIUS * c
+}
+
+fn calculate_speed(p1: &TrackPoint, p2: &TrackPoint) -> f64 {
+    let distance = haversine_distance(p1.lat, p1.lon, p2.lat, p2.lon);
+    let time_diff = (p2.time - p1.time).as_seconds_f64();
+
+    if time_diff > 0.0 {
+        distance / time_diff
+    } else {
+        0.0
+    }
+}
+
+fn detect_activity_bounds(
+    track_points: &[TrackPoint],
+    speed_threshold: f64,
+    buffer_seconds: u64,
+) -> Result<(OffsetDateTime, OffsetDateTime), Box<dyn Error>> {
+    if track_points.len() < 2 {
+        return Err("Need at least 2 track points for activity detection".into());
+    }
+
+    let mut speeds = Vec::new();
+    for i in 1..track_points.len() {
+        let speed = calculate_speed(&track_points[i - 1], &track_points[i]);
+        speeds.push((i, speed));
+    }
+
+    let min_activity_points = 3;
+    let mut activity_start_idx = None;
+    let mut activity_end_idx = None;
+
+    let mut consecutive_active = 0;
+    for (idx, speed) in &speeds {
+        if *speed >= speed_threshold {
+            consecutive_active += 1;
+            if consecutive_active >= min_activity_points && activity_start_idx.is_none() {
+                activity_start_idx = Some(*idx - consecutive_active + 1);
+            }
+        } else {
+            consecutive_active = 0;
+        }
+    }
+
+    consecutive_active = 0;
+    for (idx, speed) in speeds.iter().rev() {
+        if *speed >= speed_threshold {
+            consecutive_active += 1;
+            if consecutive_active >= min_activity_points && activity_end_idx.is_none() {
+                activity_end_idx = Some(*idx);
+            }
+        } else {
+            consecutive_active = 0;
+        }
+    }
+
+    let start_idx = activity_start_idx.unwrap_or(0);
+    let end_idx = activity_end_idx.unwrap_or(track_points.len() - 1);
+
+    let buffer_duration = Duration::seconds(buffer_seconds as i64);
+    let start_time = track_points[start_idx].time - buffer_duration;
+    let end_time = track_points[end_idx].time + buffer_duration;
+
+    Ok((start_time, end_time))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,6 +739,86 @@ mod tests {
 
         assert!(parse_range("5s").is_err()); // Missing comma
         assert!(parse_range("5s,10s,15s").is_err()); // Too many parts
+    }
+
+    #[test]
+    fn test_haversine_distance() {
+        // Distance between two points in San Francisco (approximately 1km apart)
+        let distance = haversine_distance(37.7749, -122.4194, 37.7849, -122.4094);
+        assert!(
+            (distance - 1400.0).abs() < 100.0,
+            "Expected ~1400m, got {}",
+            distance
+        );
+
+        // Same point should have 0 distance
+        let distance = haversine_distance(37.7749, -122.4194, 37.7749, -122.4194);
+        assert!(
+            distance < 1.0,
+            "Same point should have ~0 distance, got {}",
+            distance
+        );
+    }
+
+    #[test]
+    fn test_calculate_speed() {
+        let time1 = OffsetDateTime::parse(
+            "2023-01-01T10:00:00Z",
+            &time::format_description::well_known::Iso8601::DEFAULT,
+        )
+        .unwrap();
+        let time2 = OffsetDateTime::parse(
+            "2023-01-01T10:01:00Z", // 60 seconds later
+            &time::format_description::well_known::Iso8601::DEFAULT,
+        )
+        .unwrap();
+
+        let p1 = TrackPoint {
+            lat: 37.7749,
+            lon: -122.4194,
+            time: time1,
+        };
+        let p2 = TrackPoint {
+            lat: 37.7849,
+            lon: -122.4094,
+            time: time2,
+        };
+
+        let speed = calculate_speed(&p1, &p2);
+        // Should be around 23 m/s (1400m in 60s)
+        assert!(
+            speed > 20.0 && speed < 30.0,
+            "Expected ~23 m/s, got {}",
+            speed
+        );
+    }
+
+    #[test]
+    fn test_extract_track_points() {
+        let sample_gpx_with_movement = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7750" lon="-122.4195">
+        <time>2023-01-01T10:00:05Z</time>
+      </trkpt>
+      <trkpt lat="37.7760" lon="-122.4180">
+        <time>2023-01-01T10:00:10Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let track_points = extract_track_points(sample_gpx_with_movement.as_bytes()).unwrap();
+        assert_eq!(track_points.len(), 3);
+
+        assert_eq!(track_points[0].lat, 37.7749);
+        assert_eq!(track_points[0].lon, -122.4194);
+        assert_eq!(track_points[1].lat, 37.7750);
+        assert_eq!(track_points[1].lon, -122.4195);
     }
 
     #[test]
