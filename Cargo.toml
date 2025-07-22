@@ -1,5 +1,5 @@
 [package]
-name = "rust-structopt-skeleton"
+name = "gpxwrench"
 version = "0.1.0"
 edition = "2024"
 
