@@ -41,13 +41,14 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
                 } else if e.name().as_ref() == b"time" && in_trkpt {
                     in_time_element = false;
                     // Parse the collected time text
-                    if let Ok(parsed_time) = OffsetDateTime::parse(
+                    match OffsetDateTime::parse(
                         &time_text,
                         &time::format_description::well_known::Iso8601::DEFAULT,
                     ) {
-                        if min_time.is_none() || parsed_time < min_time.unwrap() {
+                        Ok(parsed_time) if min_time.is_none_or(|t| parsed_time < t) => {
                             min_time = Some(parsed_time);
                         }
+                        _ => {}
                     }
                 }
             }

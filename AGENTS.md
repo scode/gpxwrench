@@ -59,7 +59,7 @@ Primary user docs and examples live in `README.md`.
   - `cargo build`
   - `cargo test`
   - `cargo fmt`
-  - `cargo clippy`
+  - `cargo clippy -- -D warnings`
 - CI mirrors these steps and treats clippy warnings as errors. Keep the code warning-free.
 - Rust edition: 2024. Dependencies: `clap`, `time`, `quick-xml` (see `Cargo.toml`).
 
