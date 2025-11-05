@@ -54,11 +54,10 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
             }
 
             Event::Text(ref e) => {
-                if in_trkpt && in_time_element {
-                    if let Ok(text) = std::str::from_utf8(e) {
+                if in_trkpt && in_time_element
+                    && let Ok(text) = std::str::from_utf8(e) {
                         time_text.push_str(text);
                     }
-                }
             }
 
             _ => {}
@@ -185,11 +184,10 @@ pub fn filter_xml_by_time_to_writer<W: Write>(
 
             Event::Text(ref e) => {
                 if in_trkpt {
-                    if in_time_element {
-                        if let Ok(text) = std::str::from_utf8(e) {
+                    if in_time_element
+                        && let Ok(text) = std::str::from_utf8(e) {
                             time_text.push_str(text);
                         }
-                    }
                     trkpt_buffer.push(event.clone());
                 } else {
                     // Skip whitespace-only text nodes after filtered track points within track segments
@@ -292,11 +290,10 @@ pub fn extract_track_points(input: &[u8]) -> Result<Vec<TrackPoint>, Box<dyn Err
             }
 
             Event::Text(ref e) => {
-                if in_trkpt && in_time_element {
-                    if let Ok(text) = std::str::from_utf8(e) {
+                if in_trkpt && in_time_element
+                    && let Ok(text) = std::str::from_utf8(e) {
                         time_text.push_str(text);
                     }
-                }
             }
 
             _ => {}
