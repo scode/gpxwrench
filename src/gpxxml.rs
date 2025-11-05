@@ -55,7 +55,9 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
 
             Event::Text(ref e) => {
                 if in_trkpt && in_time_element {
-                    time_text.push_str(&e.unescape().unwrap_or_default());
+                    if let Ok(text) = std::str::from_utf8(e) {
+                        time_text.push_str(text);
+                    }
                 }
             }
 
@@ -130,7 +132,7 @@ pub fn filter_xml_by_time_to_writer<W: Write>(
                     }
                     trkpt_buffer.push(event.clone());
                 } else {
-                    writer.write_event(&event)?;
+                    writer.write_event(event.clone())?;
                 }
             }
 
@@ -138,7 +140,7 @@ pub fn filter_xml_by_time_to_writer<W: Write>(
                 if e.name().as_ref() == b"trkseg" {
                     in_trkseg = false;
                     just_filtered_trkpt = false;
-                    writer.write_event(&event)?;
+                    writer.write_event(event.clone())?;
                 } else if e.name().as_ref() == b"trkpt" {
                     // Decide whether to include this trkpt based on time range
                     let include_point = if let Some(point_time) = trkpt_time {
@@ -154,9 +156,9 @@ pub fn filter_xml_by_time_to_writer<W: Write>(
                     if include_point {
                         // Write all buffered events for this trkpt
                         for buffered_event in &trkpt_buffer {
-                            writer.write_event(buffered_event)?;
+                            writer.write_event(buffered_event.clone())?;
                         }
-                        writer.write_event(&event)?;
+                        writer.write_event(event.clone())?;
                         just_filtered_trkpt = false;
                     } else {
                         just_filtered_trkpt = true;
@@ -177,14 +179,16 @@ pub fn filter_xml_by_time_to_writer<W: Write>(
                     }
                     trkpt_buffer.push(event.clone());
                 } else {
-                    writer.write_event(&event)?;
+                    writer.write_event(event.clone())?;
                 }
             }
 
             Event::Text(ref e) => {
                 if in_trkpt {
                     if in_time_element {
-                        time_text.push_str(&e.unescape().unwrap_or_default());
+                        if let Ok(text) = std::str::from_utf8(e) {
+                            time_text.push_str(text);
+                        }
                     }
                     trkpt_buffer.push(event.clone());
                 } else {
@@ -193,7 +197,7 @@ pub fn filter_xml_by_time_to_writer<W: Write>(
                     if in_trkseg && just_filtered_trkpt && is_whitespace_only {
                         // Skip this whitespace text node
                     } else {
-                        writer.write_event(&event)?;
+                        writer.write_event(event.clone())?;
                         if !is_whitespace_only {
                             just_filtered_trkpt = false;
                         }
@@ -205,7 +209,7 @@ pub fn filter_xml_by_time_to_writer<W: Write>(
                 if in_trkpt {
                     trkpt_buffer.push(event.clone());
                 } else {
-                    writer.write_event(&event)?;
+                    writer.write_event(event)?;
                 }
             }
         }
@@ -289,7 +293,9 @@ pub fn extract_track_points(input: &[u8]) -> Result<Vec<TrackPoint>, Box<dyn Err
 
             Event::Text(ref e) => {
                 if in_trkpt && in_time_element {
-                    time_text.push_str(&e.unescape().unwrap_or_default());
+                    if let Ok(text) = std::str::from_utf8(e) {
+                        time_text.push_str(text);
+                    }
                 }
             }
 
