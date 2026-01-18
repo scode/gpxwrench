@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 
 fn sample_gpx() -> &'static str {
@@ -7,7 +7,7 @@ fn sample_gpx() -> &'static str {
 
 #[test]
 fn test_trim_command_duration_range() {
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     cmd.arg("trim")
         .arg("10s,40s")
         .write_stdin(sample_gpx())
@@ -20,7 +20,7 @@ fn test_trim_command_duration_range() {
 
 #[test]
 fn test_trim_command_timestamp_range() {
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     cmd.arg("trim")
         .arg("00:10,00:40")
         .write_stdin(sample_gpx())
@@ -32,7 +32,7 @@ fn test_trim_command_timestamp_range() {
 
 #[test]
 fn test_trim_command_output_is_valid_gpx() {
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     let output = cmd
         .arg("trim")
         .arg("15s,60s")
@@ -59,7 +59,7 @@ fn test_trim_command_reduces_point_count() {
     let full_count = full_gpx.tracks[0].segments[0].points.len();
 
     // Trim to a subset
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     let output = cmd
         .arg("trim")
         .arg("20s,50s")
@@ -83,7 +83,7 @@ fn test_trim_command_reduces_point_count() {
 
 #[test]
 fn test_trim_to_activity_command_default_params() {
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     cmd.arg("trim-to-activity")
         .write_stdin(sample_gpx())
         .assert()
@@ -94,7 +94,7 @@ fn test_trim_to_activity_command_default_params() {
 
 #[test]
 fn test_trim_to_activity_command_custom_speed() {
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     cmd.arg("trim-to-activity")
         .arg("--speed-threshold")
         .arg("5.0")
@@ -106,7 +106,7 @@ fn test_trim_to_activity_command_custom_speed() {
 
 #[test]
 fn test_trim_to_activity_command_custom_buffer() {
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     cmd.arg("trim-to-activity")
         .arg("--buffer")
         .arg("60")
@@ -122,7 +122,7 @@ fn test_trim_to_activity_removes_idle_portions() {
     let full_gpx: gpx::Gpx = gpx::read(sample_gpx().as_bytes()).unwrap();
     let full_count = full_gpx.tracks[0].segments[0].points.len();
 
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     let output = cmd
         .arg("trim-to-activity")
         .arg("--speed-threshold")
@@ -150,7 +150,7 @@ fn test_trim_to_activity_removes_idle_portions() {
 
 #[test]
 fn test_trim_to_activity_output_is_valid_gpx() {
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     let output = cmd
         .arg("trim-to-activity")
         .write_stdin(sample_gpx())
@@ -166,7 +166,7 @@ fn test_trim_to_activity_output_is_valid_gpx() {
 
 #[test]
 fn test_trim_invalid_range_fails() {
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     cmd.arg("trim")
         .arg("invalid")
         .write_stdin(sample_gpx())
@@ -176,7 +176,7 @@ fn test_trim_invalid_range_fails() {
 
 #[test]
 fn test_trim_command_preserves_gpx_structure() {
-    let mut cmd = Command::cargo_bin("gpxwrench").unwrap();
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
     let output = cmd
         .arg("trim")
         .arg("10s,90s")
