@@ -313,6 +313,10 @@ mod tests {
     use super::*;
     use time::OffsetDateTime;
 
+    fn parse_timestamp(s: &str) -> OffsetDateTime {
+        OffsetDateTime::parse(s, &time::format_description::well_known::Iso8601::DEFAULT).unwrap()
+    }
+
     const SAMPLE_GPX: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="test">
   <trk>
@@ -356,12 +360,7 @@ mod tests {
         assert!(result.is_some());
 
         let min_time = result.unwrap();
-        let expected = OffsetDateTime::parse(
-            "2023-01-01T10:00:00Z",
-            &time::format_description::well_known::Iso8601::DEFAULT,
-        )
-        .unwrap();
-        assert_eq!(min_time, expected);
+        assert_eq!(min_time, parse_timestamp("2023-01-01T10:00:00Z"));
     }
 
     /// Tests that find_minimum_time returns None when GPX contains track points without time elements.
@@ -408,12 +407,7 @@ mod tests {
 
         let result = find_minimum_time(gpx_bad_time.as_bytes()).unwrap();
         assert!(result.is_some());
-        let expected = OffsetDateTime::parse(
-            "2023-01-01T10:00:00Z",
-            &time::format_description::well_known::Iso8601::DEFAULT,
-        )
-        .unwrap();
-        assert_eq!(result.unwrap(), expected);
+        assert_eq!(result.unwrap(), parse_timestamp("2023-01-01T10:00:00Z"));
     }
 
     /// Tests that filter_xml_by_time produces valid GPX output that can be parsed by the GPX crate.
@@ -421,11 +415,7 @@ mod tests {
     fn test_filter_xml_by_time_validates_with_gpx_crate() {
         use gpx::{Gpx, read};
 
-        let threshold = OffsetDateTime::parse(
-            "2023-01-01T10:00:05Z",
-            &time::format_description::well_known::Iso8601::DEFAULT,
-        )
-        .unwrap();
+        let threshold = parse_timestamp("2023-01-01T10:00:05Z");
 
         let mut output = Vec::new();
         filter_xml_by_time_to_writer(SAMPLE_GPX.as_bytes(), threshold, None, &mut output).unwrap();
@@ -451,16 +441,8 @@ mod tests {
     fn test_filter_xml_by_time_range() {
         use gpx::{Gpx, read};
 
-        let start_threshold = OffsetDateTime::parse(
-            "2023-01-01T10:00:00Z",
-            &time::format_description::well_known::Iso8601::DEFAULT,
-        )
-        .unwrap();
-        let end_threshold = OffsetDateTime::parse(
-            "2023-01-01T10:00:03Z",
-            &time::format_description::well_known::Iso8601::DEFAULT,
-        )
-        .unwrap();
+        let start_threshold = parse_timestamp("2023-01-01T10:00:00Z");
+        let end_threshold = parse_timestamp("2023-01-01T10:00:03Z");
 
         let mut output = Vec::new();
         filter_xml_by_time_to_writer(
@@ -514,5 +496,184 @@ mod tests {
         assert_eq!(track_points[0].lon, -122.4194);
         assert_eq!(track_points[1].lat, 37.7750);
         assert_eq!(track_points[1].lon, -122.4195);
+    }
+
+    #[test]
+    fn test_extract_track_points_missing_lat_lon() {
+        let gpx_missing_coords = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7750">
+        <time>2023-01-01T10:00:05Z</time>
+      </trkpt>
+      <trkpt lon="-122.4180">
+        <time>2023-01-01T10:00:10Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let track_points = extract_track_points(gpx_missing_coords.as_bytes()).unwrap();
+        // Only the first point has both lat and lon
+        assert_eq!(track_points.len(), 1);
+        assert_eq!(track_points[0].lat, 37.7749);
+    }
+
+    #[test]
+    fn test_extract_track_points_missing_time() {
+        let gpx_missing_time = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7750" lon="-122.4195">
+      </trkpt>
+      <trkpt lat="37.7760" lon="-122.4180">
+        <time>2023-01-01T10:00:10Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let track_points = extract_track_points(gpx_missing_time.as_bytes()).unwrap();
+        // Second point lacks time, should be skipped
+        assert_eq!(track_points.len(), 2);
+        assert_eq!(track_points[0].lat, 37.7749);
+        assert_eq!(track_points[1].lat, 37.7760);
+    }
+
+    #[test]
+    fn test_extract_track_points_multiple_segments() {
+        let gpx_multi_seg = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="37.7760" lon="-122.4180">
+        <time>2023-01-01T11:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7770" lon="-122.4170">
+        <time>2023-01-01T11:00:05Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let track_points = extract_track_points(gpx_multi_seg.as_bytes()).unwrap();
+        assert_eq!(track_points.len(), 3);
+        assert_eq!(track_points[0].lat, 37.7749);
+        assert_eq!(track_points[1].lat, 37.7760);
+        assert_eq!(track_points[2].lat, 37.7770);
+    }
+
+    #[test]
+    fn test_extract_track_points_empty_segment() {
+        let gpx_empty_seg = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let track_points = extract_track_points(gpx_empty_seg.as_bytes()).unwrap();
+        assert_eq!(track_points.len(), 0);
+    }
+
+    #[test]
+    fn test_filter_xml_start_equals_end() {
+        use gpx::{Gpx, read};
+
+        let threshold = parse_timestamp("2023-01-01T10:00:02Z");
+
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(
+            SAMPLE_GPX.as_bytes(),
+            threshold,
+            Some(threshold),
+            &mut output,
+        )
+        .unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        // No points should match when start == end (range is empty)
+        assert_eq!(gpx.tracks[0].segments[0].points.len(), 0);
+    }
+
+    #[test]
+    fn test_filter_xml_excludes_all_points() {
+        use gpx::{Gpx, read};
+
+        let start = parse_timestamp("2023-01-01T11:00:00Z");
+        let end = parse_timestamp("2023-01-01T12:00:00Z");
+
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(SAMPLE_GPX.as_bytes(), start, Some(end), &mut output).unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        assert_eq!(gpx.tracks[0].segments[0].points.len(), 0);
+    }
+
+    #[test]
+    fn test_filter_xml_includes_all_points() {
+        use gpx::{Gpx, read};
+
+        let start = parse_timestamp("2023-01-01T09:00:00Z");
+        let end = parse_timestamp("2023-01-01T11:00:00Z");
+
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(SAMPLE_GPX.as_bytes(), start, Some(end), &mut output).unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        assert_eq!(gpx.tracks[0].segments[0].points.len(), 3);
+    }
+
+    #[test]
+    fn test_filter_xml_multiple_segments() {
+        use gpx::{Gpx, read};
+
+        let gpx_multi_seg = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7750" lon="-122.4195">
+        <time>2023-01-01T10:00:05Z</time>
+      </trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="37.7760" lon="-122.4180">
+        <time>2023-01-01T11:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7770" lon="-122.4170">
+        <time>2023-01-01T11:00:05Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let start = parse_timestamp("2023-01-01T10:00:00Z");
+        let end = parse_timestamp("2023-01-01T10:00:10Z");
+
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(gpx_multi_seg.as_bytes(), start, Some(end), &mut output)
+            .unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        // First segment should have 2 points, second segment should have 0
+        assert_eq!(gpx.tracks[0].segments[0].points.len(), 2);
+        assert_eq!(gpx.tracks[0].segments[1].points.len(), 0);
     }
 }
