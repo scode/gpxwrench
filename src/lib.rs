@@ -171,6 +171,18 @@ mod tests {
     use super::*;
     use time::OffsetDateTime;
 
+    fn make_track_point(lat: f64, lon: f64, time_str: &str) -> TrackPoint {
+        TrackPoint {
+            lat,
+            lon,
+            time: OffsetDateTime::parse(
+                time_str,
+                &time::format_description::well_known::Iso8601::DEFAULT,
+            )
+            .unwrap(),
+        }
+    }
+
     #[test]
     fn test_parse_duration() {
         assert_eq!(parse_duration("5s").unwrap(), Duration::seconds(5));
@@ -240,16 +252,51 @@ mod tests {
 
     #[test]
     fn test_calculate_speed() {
+        let p1 = make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z");
+        let p2 = make_track_point(37.7849, -122.4094, "2023-01-01T10:01:00Z"); // 60 seconds later
+
+        let speed = calculate_speed(&p1, &p2);
+        assert!(
+            speed > 20.0 && speed < 30.0,
+            "Expected ~23 m/s (1400m in 60s), got {}",
+            speed
+        );
+    }
+
+    #[test]
+    fn test_calculate_speed_simultaneous_timestamps() {
+        let p1 = make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z");
+        let p2 = make_track_point(37.7849, -122.4094, "2023-01-01T10:00:00Z");
+
+        let speed = calculate_speed(&p1, &p2);
+        assert_eq!(
+            speed, 0.0,
+            "Speed should be 0 when timestamps are identical"
+        );
+    }
+
+    #[test]
+    fn test_calculate_speed_same_coordinates() {
+        let p1 = make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z");
+        let p2 = make_track_point(37.7749, -122.4194, "2023-01-01T10:01:00Z");
+
+        let speed = calculate_speed(&p1, &p2);
+        assert!(
+            speed < 0.001,
+            "Speed should be ~0 for same coordinates, got {}",
+            speed
+        );
+    }
+
+    #[test]
+    fn test_calculate_speed_very_small_time_diff() {
+        // Ensures no division-by-zero or overflow with sub-second timestamps
         let time1 = OffsetDateTime::parse(
             "2023-01-01T10:00:00Z",
             &time::format_description::well_known::Iso8601::DEFAULT,
         )
         .unwrap();
-        let time2 = OffsetDateTime::parse(
-            "2023-01-01T10:01:00Z", // 60 seconds later
-            &time::format_description::well_known::Iso8601::DEFAULT,
-        )
-        .unwrap();
+        let time2 = time1 + Duration::milliseconds(100);
 
         let p1 = TrackPoint {
             lat: 37.7749,
@@ -257,17 +304,227 @@ mod tests {
             time: time1,
         };
         let p2 = TrackPoint {
-            lat: 37.7849,
-            lon: -122.4094,
+            lat: 37.7750,
+            lon: -122.4195,
             time: time2,
         };
 
         let speed = calculate_speed(&p1, &p2);
-        // Should be around 23 m/s (1400m in 60s)
+        assert!(speed > 0.0, "Speed should be positive for small time diff");
+        assert!(speed.is_finite(), "Speed should be finite");
         assert!(
-            speed > 20.0 && speed < 30.0,
-            "Expected ~23 m/s, got {}",
+            speed < 1000000.0,
+            "Speed should be reasonable, got {}",
             speed
         );
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_normal_activity() {
+        // Idle start -> active middle -> idle end
+        let points = vec![
+            // Idle points at start (stationary)
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:05Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:10Z"),
+            // Activity begins - moving ~100m every 5 seconds (~20 m/s)
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:15Z"),
+            make_track_point(37.7769, -122.4194, "2023-01-01T10:00:20Z"),
+            make_track_point(37.7779, -122.4194, "2023-01-01T10:00:25Z"),
+            make_track_point(37.7789, -122.4194, "2023-01-01T10:00:30Z"),
+            // Idle points at end (stationary)
+            make_track_point(37.7789, -122.4194, "2023-01-01T10:00:35Z"),
+            make_track_point(37.7789, -122.4194, "2023-01-01T10:00:40Z"),
+            make_track_point(37.7789, -122.4194, "2023-01-01T10:00:45Z"),
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, 0);
+        assert!(result.is_ok());
+        let (start, end) = result.unwrap();
+
+        // Activity detection should trim off the idle portions
+        // Start should be no earlier than the first idle point
+        assert!(
+            start > points[0].time,
+            "Start should be after the first idle point"
+        );
+        // End should be no later than the last idle point
+        assert!(
+            end < points[points.len() - 1].time,
+            "End should be before the last idle point"
+        );
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_all_idle() {
+        // All points are stationary - no activity detected
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:05Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:10Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:15Z"),
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, 0);
+        assert!(result.is_ok());
+        let (start, end) = result.unwrap();
+
+        // Should fall back to full range
+        assert_eq!(start, points[0].time);
+        assert_eq!(end, points[points.len() - 1].time);
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_all_active() {
+        // All points are moving fast - activity detected throughout
+        let points = vec![
+            make_track_point(37.7700, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7710, -122.4194, "2023-01-01T10:00:05Z"),
+            make_track_point(37.7720, -122.4194, "2023-01-01T10:00:10Z"),
+            make_track_point(37.7730, -122.4194, "2023-01-01T10:00:15Z"),
+            make_track_point(37.7740, -122.4194, "2023-01-01T10:00:20Z"),
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, 0);
+        assert!(result.is_ok());
+        let (start, end) = result.unwrap();
+
+        // When all points are active, both start and end should be within the data range
+        assert!(start >= points[0].time, "Start should be within data range");
+        assert!(
+            end <= points[points.len() - 1].time,
+            "End should be within data range"
+        );
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_single_point() {
+        let points = vec![make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z")];
+
+        let result = detect_activity_bounds(&points, 5.0, 0);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("at least 2"));
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_two_points() {
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:05Z"),
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, 0);
+        assert!(result.is_ok());
+        let (start, end) = result.unwrap();
+
+        // With only 2 points, can't have 3 consecutive active, falls back to full range
+        assert_eq!(start, points[0].time);
+        assert_eq!(end, points[1].time);
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_exactly_three_active() {
+        // The algorithm requires 3 consecutive active speeds to confirm true activity vs GPS noise.
+        // Exactly 3 consecutive active speeds requires 4 points.
+        // With 4 moving points: speeds between (0,1), (1,2), (2,3) = 3 speeds
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:05Z"),
+            make_track_point(37.7769, -122.4194, "2023-01-01T10:00:10Z"),
+            make_track_point(37.7779, -122.4194, "2023-01-01T10:00:15Z"),
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, 0);
+        assert!(result.is_ok());
+        let (start, end) = result.unwrap();
+
+        // Should successfully detect activity and return valid bounds
+        assert!(start >= points[0].time, "Start should be within data range");
+        assert!(
+            start <= points[points.len() - 1].time,
+            "Start should be within data range"
+        );
+        assert!(end >= points[0].time, "End should be within data range");
+        assert!(
+            end <= points[points.len() - 1].time,
+            "End should be within data range"
+        );
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_sporadic_noise() {
+        // Isolated fast points are likely GPS jitter, not real movement.
+        // Sporadic high-speed points that shouldn't trigger activity (not consecutive)
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:05Z"), // Fast
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:10Z"), // Idle
+            make_track_point(37.7769, -122.4194, "2023-01-01T10:00:15Z"), // Fast
+            make_track_point(37.7769, -122.4194, "2023-01-01T10:00:20Z"), // Idle
+            make_track_point(37.7779, -122.4194, "2023-01-01T10:00:25Z"), // Fast
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, 0);
+        assert!(result.is_ok());
+        let (start, end) = result.unwrap();
+
+        // No 3 consecutive active points, should fall back to defaults
+        assert_eq!(start, points[0].time);
+        assert_eq!(end, points[points.len() - 1].time);
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_buffer_time() {
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:05Z"),
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:10Z"),
+            make_track_point(37.7769, -122.4194, "2023-01-01T10:00:15Z"),
+            make_track_point(37.7779, -122.4194, "2023-01-01T10:00:20Z"),
+            make_track_point(37.7789, -122.4194, "2023-01-01T10:00:25Z"),
+            make_track_point(37.7789, -122.4194, "2023-01-01T10:00:30Z"),
+        ];
+
+        let result_no_buffer = detect_activity_bounds(&points, 5.0, 0).unwrap();
+        let result_with_buffer = detect_activity_bounds(&points, 5.0, 10).unwrap();
+
+        // Buffer should extend the range
+        assert!(
+            result_with_buffer.0 < result_no_buffer.0,
+            "Start should be earlier with buffer"
+        );
+        assert!(
+            result_with_buffer.1 > result_no_buffer.1,
+            "End should be later with buffer"
+        );
+
+        // Verify buffer is approximately correct (10 seconds)
+        let start_diff = (result_no_buffer.0 - result_with_buffer.0).whole_seconds();
+        let end_diff = (result_with_buffer.1 - result_no_buffer.1).whole_seconds();
+        assert_eq!(start_diff, 10, "Start buffer should be 10 seconds");
+        assert_eq!(end_diff, 10, "End buffer should be 10 seconds");
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_empty() {
+        let points: Vec<TrackPoint> = vec![];
+        let result = detect_activity_bounds(&points, 5.0, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_threshold_boundary() {
+        // Points moving at exactly the threshold speed
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.77494494, -122.4194, "2023-01-01T10:00:05Z"), // ~5m in 5s = 1 m/s
+            make_track_point(37.77498988, -122.4194, "2023-01-01T10:00:10Z"),
+            make_track_point(37.77503482, -122.4194, "2023-01-01T10:00:15Z"),
+            make_track_point(37.77507976, -122.4194, "2023-01-01T10:00:20Z"),
+        ];
+
+        // With threshold 1.0, these should count as active (speed >= threshold)
+        let result = detect_activity_bounds(&points, 1.0, 0);
+        assert!(result.is_ok());
     }
 }
