@@ -245,6 +245,10 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
                 }
             }
 
+            Event::Empty(ref e) if e.name().as_ref() == b"trkpt" => {
+                just_filtered_trkpt = true;
+            }
+
             event => {
                 if in_trkpt {
                     trkpt_buffer.push(event.clone());
@@ -736,6 +740,40 @@ mod tests {
 
         let gpx: Gpx = read(output.as_slice()).unwrap();
         assert_eq!(gpx.tracks[0].segments[0].points.len(), 0);
+    }
+
+    #[test]
+    fn test_filter_xml_excludes_empty_track_points() {
+        use gpx::{Gpx, read};
+
+        let gpx_with_empty_point = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194"/>
+      <trkpt lat="37.7750" lon="-122.4195">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+        let start = parse_timestamp("2023-01-01T10:00:00Z");
+        let end = parse_timestamp("2023-01-01T10:00:01Z");
+
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(
+            gpx_with_empty_point.as_bytes(),
+            start,
+            Some(end),
+            &mut output,
+        )
+        .unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        let points = &gpx.tracks[0].segments[0].points;
+        assert_eq!(points.len(), 1);
+        assert!(points[0].time.is_some());
+        assert_eq!(points[0].point().x(), -122.4195);
     }
 
     #[test]
