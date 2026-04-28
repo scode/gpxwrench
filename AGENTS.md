@@ -39,7 +39,8 @@ Primary user docs and examples live in `README.md`.
 - `trim-to-activity [-s, --speed-threshold <m/s>] [-b, --buffer <seconds>]`
   - Detects the main activity window via speeds between consecutive track points.
   - Internals: `extract_track_points` → `detect_activity_bounds` → `filter_xml_by_time_range_inclusive_end`.
-  - Defaults: speed threshold 1.0 m/s, buffer 30 s; requires at least two timestamped points.
+  - Defaults: speed threshold 1.0 m/s, buffer 30 s; detection requires at least three consecutive speed intervals,
+    which means four points.
 
 ### Key modules and functions
 - `src/lib.rs`
