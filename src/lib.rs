@@ -160,9 +160,17 @@ pub fn detect_activity_bounds(
     let start_idx = activity_start_idx.unwrap_or(0);
     let end_idx = activity_end_idx.unwrap_or(track_points.len() - 1);
 
-    let buffer_duration = Duration::seconds(buffer_seconds as i64);
-    let start_time = track_points[start_idx].time - buffer_duration;
-    let end_time = track_points[end_idx].time + buffer_duration;
+    let buffer_seconds = i64::try_from(buffer_seconds)
+        .map_err(|_| "Buffer seconds exceed supported duration range")?;
+    let buffer_duration = Duration::seconds(buffer_seconds);
+    let start_time = track_points[start_idx]
+        .time
+        .checked_sub(buffer_duration)
+        .ok_or("Activity start time exceeds supported timestamp range")?;
+    let end_time = track_points[end_idx]
+        .time
+        .checked_add(buffer_duration)
+        .ok_or("Activity end time exceeds supported timestamp range")?;
 
     Ok((start_time, end_time))
 }
@@ -390,7 +398,8 @@ mod tests {
         assert!(result.is_ok());
         let (start, end) = result.unwrap();
 
-        // When all points are active, both start and end should be within the data range
+        // The activity detector returns selected point times; the XML writer decides
+        // whether the end bound is inclusive for a given command.
         assert!(start >= points[0].time, "Start should be within data range");
         assert!(
             end <= points[points.len() - 1].time,
@@ -476,7 +485,6 @@ mod tests {
         assert!(result.is_ok());
         let (start, end) = result.unwrap();
 
-        // Should successfully detect activity and return valid bounds
         assert!(start >= points[0].time, "Start should be within data range");
         assert!(
             start <= points[points.len() - 1].time,
@@ -541,12 +549,107 @@ mod tests {
         let end_diff = (result_with_buffer.1 - result_no_buffer.1).whole_seconds();
         assert_eq!(start_diff, 10, "Start buffer should be 10 seconds");
         assert_eq!(end_diff, 10, "End buffer should be 10 seconds");
+        assert_eq!(result_with_buffer.1, points[5].time + Duration::seconds(10));
     }
 
     #[test]
     fn test_detect_activity_bounds_empty() {
         let points: Vec<TrackPoint> = vec![];
         let result = detect_activity_bounds(&points, 5.0, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_rejects_oversized_buffer() {
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:05Z"),
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, u64::MAX);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_rejects_start_time_underflow() {
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:05Z"),
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, i64::MAX as u64);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_allows_max_end_time_without_buffer() {
+        let final_time = OffsetDateTime::parse(
+            "9999-12-31T23:59:59.999999999Z",
+            &time::format_description::well_known::Iso8601::DEFAULT,
+        )
+        .unwrap();
+        let points = vec![
+            TrackPoint {
+                lat: 37.7749,
+                lon: -122.4194,
+                time: final_time - Duration::seconds(15),
+            },
+            TrackPoint {
+                lat: 37.7759,
+                lon: -122.4194,
+                time: final_time - Duration::seconds(10),
+            },
+            TrackPoint {
+                lat: 37.7769,
+                lon: -122.4194,
+                time: final_time - Duration::seconds(5),
+            },
+            TrackPoint {
+                lat: 37.7779,
+                lon: -122.4194,
+                time: final_time,
+            },
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, 0);
+
+        assert_eq!(result.unwrap().1, final_time);
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_rejects_end_time_overflow_with_buffer() {
+        let final_time = OffsetDateTime::parse(
+            "9999-12-31T23:59:59.999999999Z",
+            &time::format_description::well_known::Iso8601::DEFAULT,
+        )
+        .unwrap();
+        let points = vec![
+            TrackPoint {
+                lat: 37.7749,
+                lon: -122.4194,
+                time: final_time - Duration::seconds(15),
+            },
+            TrackPoint {
+                lat: 37.7759,
+                lon: -122.4194,
+                time: final_time - Duration::seconds(10),
+            },
+            TrackPoint {
+                lat: 37.7769,
+                lon: -122.4194,
+                time: final_time - Duration::seconds(5),
+            },
+            TrackPoint {
+                lat: 37.7779,
+                lon: -122.4194,
+                time: final_time,
+            },
+        ];
+
+        let result = detect_activity_bounds(&points, 5.0, 1);
+
         assert!(result.is_err());
     }
 

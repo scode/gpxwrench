@@ -84,10 +84,34 @@ pub fn filter_xml_by_time_range(
     )
 }
 
+pub fn filter_xml_by_time_range_inclusive_end(
+    input: &[u8],
+    start_threshold: OffsetDateTime,
+    end_threshold: OffsetDateTime,
+) -> Result<(), Box<dyn Error>> {
+    filter_xml_by_time_to_writer_with_end_mode(
+        input,
+        start_threshold,
+        Some(end_threshold),
+        true,
+        std::io::stdout(),
+    )
+}
+
 pub fn filter_xml_by_time_to_writer<W: Write>(
     input: &[u8],
     start_threshold: OffsetDateTime,
     end_threshold: Option<OffsetDateTime>,
+    output: W,
+) -> Result<(), Box<dyn Error>> {
+    filter_xml_by_time_to_writer_with_end_mode(input, start_threshold, end_threshold, false, output)
+}
+
+fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
+    input: &[u8],
+    start_threshold: OffsetDateTime,
+    end_threshold: Option<OffsetDateTime>,
+    include_end_threshold: bool,
     output: W,
 ) -> Result<(), Box<dyn Error>> {
     let mut reader = Reader::from_reader(input);
@@ -146,7 +170,12 @@ pub fn filter_xml_by_time_to_writer<W: Write>(
                     // Decide whether to include this trkpt based on time range
                     let include_point = if let Some(point_time) = trkpt_time {
                         if let Some(end_thresh) = end_threshold {
-                            point_time >= start_threshold && point_time < end_thresh
+                            point_time >= start_threshold
+                                && if include_end_threshold {
+                                    point_time <= end_thresh
+                                } else {
+                                    point_time < end_thresh
+                                }
                         } else {
                             point_time <= start_threshold
                         }
@@ -468,6 +497,27 @@ mod tests {
         // Verify the times are correct
         assert!(points[0].time.is_some());
         assert!(points[1].time.is_some());
+    }
+
+    #[test]
+    fn test_filter_xml_by_time_range_inclusive_end() {
+        use gpx::{Gpx, read};
+
+        let start_threshold = parse_timestamp("2023-01-01T10:00:00Z");
+        let end_threshold = parse_timestamp("2023-01-01T10:00:02Z");
+
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer_with_end_mode(
+            SAMPLE_GPX.as_bytes(),
+            start_threshold,
+            Some(end_threshold),
+            true,
+            &mut output,
+        )
+        .unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        assert_eq!(gpx.tracks[0].segments[0].points.len(), 2);
     }
 
     #[test]

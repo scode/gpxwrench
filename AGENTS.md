@@ -25,7 +25,9 @@ Primary user docs and examples live in `README.md`.
   - Read full GPX from stdin, write resulting GPX to stdout; print errors to stderr, exit non-zero on failure.
   - Avoid interactive prompts; be scriptable.
 - Time ranges are relative to the earliest track point timestamp.
-- Range semantics are inclusive of start and exclusive of end: [start, end).
+- Manual trim ranges are inclusive of start and exclusive of end: [start, end).
+- Activity trimming treats the detected final activity point as included; do not fake that by creating a synthetic
+  timestamp just past the final point.
 - Preserve GPX structure and unknown extensions for any kept `trkpt`.
 - Prefer streaming processing for XML (no full DOM); `extract_track_points` returns an in-memory list only when required by algorithms (e.g., activity detection).
 
@@ -36,7 +38,7 @@ Primary user docs and examples live in `README.md`.
   - Internally: parse with `parse_range`, read earliest time via `find_minimum_time`, then filter with `filter_xml_by_time_range`.
 - `trim-to-activity [-s, --speed-threshold <m/s>] [-b, --buffer <seconds>]`
   - Detects the main activity window via speeds between consecutive track points.
-  - Internals: `extract_track_points` → `detect_activity_bounds` → `filter_xml_by_time_range`.
+  - Internals: `extract_track_points` → `detect_activity_bounds` → `filter_xml_by_time_range_inclusive_end`.
   - Defaults: speed threshold 1.0 m/s, buffer 30 s; requires at least two timestamped points.
 
 ### Key modules and functions
