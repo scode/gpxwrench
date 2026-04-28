@@ -13,6 +13,7 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
     let mut in_trkpt = false;
     let mut in_time_element = false;
     let mut time_text = String::new();
+    let mut element_depth = 0usize;
 
     loop {
         let event = match reader.read_event_into(&mut buf) {
@@ -21,12 +22,14 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
                     format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
                 );
             }
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) if element_depth == 0 => break,
+            Ok(Event::Eof) => return Err("Unexpected EOF while parsing GPX".into()),
             Ok(event) => event.into_owned(),
         };
 
         match event {
             Event::Start(ref e) => {
+                element_depth += 1;
                 if e.name().as_ref() == b"trkpt" {
                     in_trkpt = true;
                 } else if in_trkpt && e.name().as_ref() == b"time" {
@@ -36,6 +39,9 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
             }
 
             Event::End(ref e) => {
+                element_depth = element_depth
+                    .checked_sub(1)
+                    .ok_or("Unexpected closing XML element")?;
                 if e.name().as_ref() == b"trkpt" {
                     in_trkpt = false;
                 } else if e.name().as_ref() == b"time" && in_trkpt {
@@ -125,6 +131,7 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
     let mut time_text = String::new();
     let mut in_trkseg = false;
     let mut just_filtered_trkpt = false;
+    let mut element_depth = 0usize;
 
     loop {
         let event = match reader.read_event_into(&mut buf) {
@@ -133,12 +140,14 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
                     format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
                 );
             }
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) if element_depth == 0 => break,
+            Ok(Event::Eof) => return Err("Unexpected EOF while parsing GPX".into()),
             Ok(event) => event.into_owned(),
         };
 
         match event {
             Event::Start(ref e) => {
+                element_depth += 1;
                 if e.name().as_ref() == b"trkseg" {
                     in_trkseg = true;
                     just_filtered_trkpt = false;
@@ -162,6 +171,9 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
             }
 
             Event::End(ref e) => {
+                element_depth = element_depth
+                    .checked_sub(1)
+                    .ok_or("Unexpected closing XML element")?;
                 if e.name().as_ref() == b"trkseg" {
                     in_trkseg = false;
                     just_filtered_trkpt = false;
@@ -259,6 +271,7 @@ pub fn extract_track_points(input: &[u8]) -> Result<Vec<TrackPoint>, Box<dyn Err
     let mut current_time: Option<OffsetDateTime> = None;
     let mut in_time_element = false;
     let mut time_text = String::new();
+    let mut element_depth = 0usize;
 
     loop {
         let event = match reader.read_event_into(&mut buf) {
@@ -267,12 +280,14 @@ pub fn extract_track_points(input: &[u8]) -> Result<Vec<TrackPoint>, Box<dyn Err
                     format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
                 );
             }
-            Ok(Event::Eof) => break,
+            Ok(Event::Eof) if element_depth == 0 => break,
+            Ok(Event::Eof) => return Err("Unexpected EOF while parsing GPX".into()),
             Ok(event) => event.into_owned(),
         };
 
         match event {
             Event::Start(ref e) => {
+                element_depth += 1;
                 if e.name().as_ref() == b"trkpt" {
                     in_trkpt = true;
                     current_lat = None;
@@ -301,6 +316,9 @@ pub fn extract_track_points(input: &[u8]) -> Result<Vec<TrackPoint>, Box<dyn Err
             }
 
             Event::End(ref e) => {
+                element_depth = element_depth
+                    .checked_sub(1)
+                    .ok_or("Unexpected closing XML element")?;
                 if e.name().as_ref() == b"trkpt" {
                     if let (Some(lat), Some(lon), Some(time)) =
                         (current_lat, current_lon, current_time)
@@ -415,6 +433,52 @@ mod tests {
     fn test_find_minimum_time_with_empty_input() {
         let result = find_minimum_time(b"").unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_filter_xml_rejects_truncated_input() {
+        let truncated_gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>"#;
+        let start = parse_timestamp("2023-01-01T10:00:00Z");
+        let end = parse_timestamp("2023-01-01T10:01:00Z");
+
+        let mut output = Vec::new();
+        let result =
+            filter_xml_by_time_to_writer(truncated_gpx.as_bytes(), start, Some(end), &mut output);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_find_minimum_time_rejects_truncated_input() {
+        let truncated_gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>"#;
+
+        let result = find_minimum_time(truncated_gpx.as_bytes());
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_track_points_rejects_truncated_input() {
+        let truncated_gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>"#;
+
+        let result = extract_track_points(truncated_gpx.as_bytes());
+
+        assert!(result.is_err());
     }
 
     /// Tests that find_minimum_time ignores malformed timestamps and finds valid ones.
