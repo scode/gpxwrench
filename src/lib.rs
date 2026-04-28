@@ -488,25 +488,19 @@ mod tests {
         // With 4 moving points: speeds between (0,1), (1,2), (2,3) = 3 speeds
         let points = vec![
             make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
-            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:05Z"),
-            make_track_point(37.7769, -122.4194, "2023-01-01T10:00:10Z"),
-            make_track_point(37.7779, -122.4194, "2023-01-01T10:00:15Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:05Z"),
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:10Z"),
+            make_track_point(37.7769, -122.4194, "2023-01-01T10:00:15Z"),
+            make_track_point(37.7779, -122.4194, "2023-01-01T10:00:20Z"),
+            make_track_point(37.7779, -122.4194, "2023-01-01T10:00:25Z"),
         ];
 
         let result = detect_activity_bounds(&points, 5.0, 0);
         assert!(result.is_ok());
         let (start, end) = result.unwrap();
 
-        assert!(start >= points[0].time, "Start should be within data range");
-        assert!(
-            start <= points[points.len() - 1].time,
-            "Start should be within data range"
-        );
-        assert!(end >= points[0].time, "End should be within data range");
-        assert!(
-            end <= points[points.len() - 1].time,
-            "End should be within data range"
-        );
+        assert_eq!(start, points[1].time);
+        assert_eq!(end, points[4].time);
     }
 
     #[test]
