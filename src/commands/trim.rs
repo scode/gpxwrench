@@ -1,7 +1,8 @@
 use crate::gpxxml::{filter_xml_by_time_range, find_minimum_time};
 use gpxwrench::{TrimRange, parse_range};
 use std::error::Error;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
+use time::OffsetDateTime;
 
 pub fn trim_command(range_str: &str) -> Result<(), Box<dyn Error>> {
     let range = parse_range(range_str)?;
@@ -34,7 +35,11 @@ pub fn trim_command(range_str: &str) -> Result<(), Box<dyn Error>> {
 
         filter_xml_by_time_range(&input, start_threshold, end_threshold)?;
     } else {
-        io::stdout().write_all(&input)?;
+        filter_xml_by_time_range(
+            &input,
+            OffsetDateTime::UNIX_EPOCH,
+            OffsetDateTime::UNIX_EPOCH,
+        )?;
     }
 
     Ok(())
