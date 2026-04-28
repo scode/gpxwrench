@@ -175,6 +175,60 @@ fn test_trim_invalid_range_fails() {
 }
 
 #[test]
+fn test_trim_excludes_points_when_no_timestamps_exist() {
+    let gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194"/>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
+    let output = cmd
+        .arg("trim")
+        .arg("0s,1s")
+        .write_stdin(gpx)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let gpx: gpx::Gpx = gpx::read(output.as_slice()).unwrap();
+    assert_eq!(gpx.tracks[0].segments[0].points.len(), 0);
+}
+
+#[test]
+fn test_trim_excludes_points_when_no_valid_timestamps_exist() {
+    let gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>not-a-time</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
+    let output = cmd
+        .arg("trim")
+        .arg("0s,1s")
+        .write_stdin(gpx)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let gpx: gpx::Gpx = gpx::read(output.as_slice()).unwrap();
+    assert_eq!(gpx.tracks[0].segments[0].points.len(), 0);
+}
+
+#[test]
 fn test_trim_timestamp_overflow_fails() {
     let gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="test">
