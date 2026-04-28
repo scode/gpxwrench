@@ -205,6 +205,32 @@ fn test_trim_to_activity_without_valid_coordinates_fails() {
 }
 
 #[test]
+fn test_trim_to_activity_rejects_invalid_speed_thresholds() {
+    for threshold in ["-1.0", "NaN", "inf"] {
+        let mut cmd = cargo_bin_cmd!("gpxwrench");
+        cmd.arg("trim-to-activity")
+            .arg(format!("--speed-threshold={threshold}"))
+            .write_stdin(sample_gpx())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Speed threshold must be a finite non-negative number",
+            ));
+    }
+}
+
+#[test]
+fn test_trim_to_activity_accepts_zero_speed_threshold() {
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
+    cmd.arg("trim-to-activity")
+        .arg("--speed-threshold=0.0")
+        .write_stdin(sample_gpx())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<gpx"));
+}
+
+#[test]
 fn test_trim_invalid_range_fails() {
     let mut cmd = cargo_bin_cmd!("gpxwrench");
     cmd.arg("trim")

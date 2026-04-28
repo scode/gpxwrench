@@ -4,6 +4,10 @@ use std::error::Error;
 use std::io::{self, Read};
 
 pub fn trim_to_activity_command(speed_threshold: f64, buffer: u64) -> Result<(), Box<dyn Error>> {
+    if !speed_threshold.is_finite() || speed_threshold < 0.0 {
+        return Err("Speed threshold must be a finite non-negative number".into());
+    }
+
     let stdin = io::stdin();
     let mut input = Vec::new();
     stdin.lock().read_to_end(&mut input)?;
