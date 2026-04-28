@@ -14,8 +14,22 @@ pub fn trim_command(range_str: &str) -> Result<(), Box<dyn Error>> {
 
     if let Some(min_t) = min_time {
         let (start_threshold, end_threshold) = match range {
-            TrimRange::Duration { start, end } => (min_t + start, min_t + end),
-            TrimRange::Timestamp { start, end } => (min_t + start, min_t + end),
+            TrimRange::Duration { start, end } => (
+                min_t
+                    .checked_add(start)
+                    .ok_or("Trim start exceeds supported timestamp range")?,
+                min_t
+                    .checked_add(end)
+                    .ok_or("Trim end exceeds supported timestamp range")?,
+            ),
+            TrimRange::Timestamp { start, end } => (
+                min_t
+                    .checked_add(start)
+                    .ok_or("Trim start exceeds supported timestamp range")?,
+                min_t
+                    .checked_add(end)
+                    .ok_or("Trim end exceeds supported timestamp range")?,
+            ),
         };
 
         filter_xml_by_time_range(&input, start_threshold, end_threshold)?;
