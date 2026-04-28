@@ -165,6 +165,46 @@ fn test_trim_to_activity_output_is_valid_gpx() {
 }
 
 #[test]
+fn test_trim_to_activity_without_valid_points_fails() {
+    let gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194"/>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
+    cmd.arg("trim-to-activity")
+        .write_stdin(gpx)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("at least 2 track points"));
+}
+
+#[test]
+fn test_trim_to_activity_without_valid_coordinates_fails() {
+    let gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
+    cmd.arg("trim-to-activity")
+        .write_stdin(gpx)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("at least 2 track points"));
+}
+
+#[test]
 fn test_trim_invalid_range_fails() {
     let mut cmd = cargo_bin_cmd!("gpxwrench");
     cmd.arg("trim")
