@@ -22,12 +22,15 @@ pub fn parse_duration(s: &str) -> Result<Duration, Box<dyn Error>> {
     let (num_str, unit) = s.split_at(s.len() - 1);
     let num: i64 = num_str.parse()?;
 
-    match unit {
-        "s" => Ok(Duration::seconds(num)),
-        "m" => Ok(Duration::minutes(num)),
-        "h" => Ok(Duration::hours(num)),
-        _ => Err(format!("Invalid duration unit: {unit}").into()),
+    let seconds = match unit {
+        "s" => Some(num),
+        "m" => num.checked_mul(60),
+        "h" => num.checked_mul(60 * 60),
+        _ => return Err(format!("Invalid duration unit: {unit}").into()),
     }
+    .ok_or("Duration exceeds supported range")?;
+
+    Ok(Duration::seconds(seconds))
 }
 
 pub fn parse_timestamp(s: &str) -> Result<Duration, Box<dyn Error>> {
@@ -43,7 +46,18 @@ pub fn parse_timestamp(s: &str) -> Result<Duration, Box<dyn Error>> {
         _ => return Err("Invalid timestamp format".into()),
     };
 
-    Ok(Duration::hours(hours) + Duration::minutes(minutes) + Duration::seconds(seconds))
+    let hours = hours
+        .checked_mul(60 * 60)
+        .ok_or("Timestamp hour value exceeds supported duration range")?;
+    let minutes = minutes
+        .checked_mul(60)
+        .ok_or("Timestamp minute value exceeds supported duration range")?;
+    let total_seconds = hours
+        .checked_add(minutes)
+        .and_then(|total| total.checked_add(seconds))
+        .ok_or("Timestamp exceeds supported duration range")?;
+
+    Ok(Duration::seconds(total_seconds))
 }
 
 pub fn parse_range(range_str: &str) -> Result<TrimRange, Box<dyn Error>> {
@@ -199,6 +213,7 @@ mod tests {
         assert_eq!(parse_duration("2h").unwrap(), Duration::hours(2));
         assert!(parse_duration("5x").is_err());
         assert!(parse_duration("").is_err());
+        assert!(parse_duration("9223372036854775807h").is_err());
     }
 
     #[test]
@@ -214,6 +229,8 @@ mod tests {
         );
         assert!(parse_timestamp("1:2:3:4").is_err());
         assert!(parse_timestamp("invalid").is_err());
+        assert!(parse_timestamp("9223372036854775807:00:00").is_err());
+        assert!(parse_timestamp("2562047788015215:31:00").is_err());
     }
 
     #[test]

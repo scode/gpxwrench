@@ -175,6 +175,50 @@ fn test_trim_invalid_range_fails() {
 }
 
 #[test]
+fn test_trim_timestamp_overflow_fails() {
+    let gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>9999-12-31T23:59:59.999999999Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
+    cmd.arg("trim")
+        .arg("1s,2s")
+        .write_stdin(gpx)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Trim start exceeds"));
+}
+
+#[test]
+fn test_trim_end_timestamp_overflow_fails() {
+    let gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>9999-12-31T23:59:58.999999999Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+    let mut cmd = cargo_bin_cmd!("gpxwrench");
+    cmd.arg("trim")
+        .arg("0s,2s")
+        .write_stdin(gpx)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Trim end exceeds"));
+}
+
+#[test]
 fn test_trim_command_preserves_gpx_structure() {
     let mut cmd = cargo_bin_cmd!("gpxwrench");
     let output = cmd
