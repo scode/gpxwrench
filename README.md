@@ -65,6 +65,7 @@ cat longer-track.gpx | cargo run -- trim 01:02:30,02:15:45 > output.gpx
 - The range is inclusive of the start time and exclusive of the end time `[start, end)`
 - All GPX extensions (including heart rate data) are preserved in the filtered output
 - Track points without timestamps are excluded from the output
+- Input is limited to 100 MiB
 
 ### Trim-to-Activity Command
 
@@ -124,6 +125,7 @@ cat drive.gpx | cargo run -- trim-to-activity -s 5.0 -b 15 > output.gpx
 - Uses conservative detection to confirm activity (requires 3+ consecutive speed intervals at or above threshold, which means 4 points)
 - Errs on the side of inclusion - better to keep too much than cut off activity
 - Preserves all GPX extensions and formatting like the `trim` command
+- Input is limited to 100 MiB and 1,000,000 valid track points
 
 ## Development
 

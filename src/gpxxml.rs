@@ -1,4 +1,4 @@
-use gpxwrench::TrackPoint;
+use gpxwrench::{MAX_TRACK_POINTS, TrackPoint};
 use quick_xml::events::Event;
 use quick_xml::{Reader, Writer};
 use std::error::Error;
@@ -265,6 +265,13 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
 }
 
 pub fn extract_track_points(input: &[u8]) -> Result<Vec<TrackPoint>, Box<dyn Error>> {
+    extract_track_points_with_limit(input, MAX_TRACK_POINTS)
+}
+
+fn extract_track_points_with_limit(
+    input: &[u8],
+    max_track_points: usize,
+) -> Result<Vec<TrackPoint>, Box<dyn Error>> {
     let mut reader = Reader::from_reader(input);
     let mut buf = Vec::new();
     let mut track_points = Vec::new();
@@ -327,6 +334,12 @@ pub fn extract_track_points(input: &[u8]) -> Result<Vec<TrackPoint>, Box<dyn Err
                     if let (Some(lat), Some(lon), Some(time)) =
                         (current_lat, current_lon, current_time)
                     {
+                        if track_points.len() == max_track_points {
+                            return Err(format!(
+                                "Input exceeds maximum supported track point count of {max_track_points}"
+                            )
+                            .into());
+                        }
                         track_points.push(TrackPoint { lat, lon, time });
                     }
                     in_trkpt = false;
@@ -614,6 +627,49 @@ mod tests {
         assert_eq!(track_points[0].lon, -122.4194);
         assert_eq!(track_points[1].lat, 37.7750);
         assert_eq!(track_points[1].lon, -122.4195);
+    }
+
+    #[test]
+    fn test_extract_track_points_rejects_limit_overflow() {
+        let sample_gpx_with_two_points = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7750" lon="-122.4195">
+        <time>2023-01-01T10:00:05Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let result = extract_track_points_with_limit(sample_gpx_with_two_points.as_bytes(), 1);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_track_points_accepts_exact_limit() {
+        let sample_gpx_with_two_points = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.7750" lon="-122.4195">
+        <time>2023-01-01T10:00:05Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let track_points =
+            extract_track_points_with_limit(sample_gpx_with_two_points.as_bytes(), 2).unwrap();
+
+        assert_eq!(track_points.len(), 2);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use crate::gpxxml::{extract_track_points, filter_xml_by_time_range_inclusive_end};
-use gpxwrench::detect_activity_bounds;
+use gpxwrench::{MAX_INPUT_BYTES, detect_activity_bounds, read_to_end_limited};
 use std::error::Error;
-use std::io::{self, Read};
+use std::io;
 
 pub fn trim_to_activity_command(speed_threshold: f64, buffer: u64) -> Result<(), Box<dyn Error>> {
     if !speed_threshold.is_finite() || speed_threshold < 0.0 {
@@ -9,8 +9,7 @@ pub fn trim_to_activity_command(speed_threshold: f64, buffer: u64) -> Result<(),
     }
 
     let stdin = io::stdin();
-    let mut input = Vec::new();
-    stdin.lock().read_to_end(&mut input)?;
+    let input = read_to_end_limited(stdin.lock(), MAX_INPUT_BYTES)?;
 
     let track_points = extract_track_points(&input)?;
 
