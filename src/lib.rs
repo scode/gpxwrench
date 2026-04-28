@@ -155,35 +155,25 @@ pub fn detect_activity_bounds(
         return Err("Need at least 2 track points for activity detection".into());
     }
 
-    let mut speeds = Vec::new();
-    for i in 1..track_points.len() {
-        let speed = calculate_speed(&track_points[i - 1], &track_points[i]);
-        speeds.push((i, speed));
-    }
-
     let min_activity_points = 3;
     let mut activity_start_idx = None;
     let mut activity_end_idx = None;
 
     let mut consecutive_active = 0;
-    for (idx, speed) in &speeds {
-        if *speed >= speed_threshold {
+    let mut current_run_start_idx = 0;
+    for (idx, points) in track_points.windows(2).enumerate() {
+        let point_idx = idx + 1;
+        let speed = calculate_speed(&points[0], &points[1]);
+        if speed >= speed_threshold {
+            if consecutive_active == 0 {
+                current_run_start_idx = point_idx - 1;
+            }
             consecutive_active += 1;
             if consecutive_active >= min_activity_points && activity_start_idx.is_none() {
-                activity_start_idx = Some(*idx - consecutive_active);
+                activity_start_idx = Some(current_run_start_idx);
             }
-        } else {
-            consecutive_active = 0;
-        }
-    }
-
-    consecutive_active = 0;
-    for (idx, speed) in speeds.iter().rev() {
-        if *speed >= speed_threshold {
-            consecutive_active += 1;
             if consecutive_active >= min_activity_points {
-                activity_end_idx = Some(*idx + consecutive_active - 1);
-                break;
+                activity_end_idx = Some(point_idx);
             }
         } else {
             consecutive_active = 0;
