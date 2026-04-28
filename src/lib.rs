@@ -148,8 +148,9 @@ pub fn detect_activity_bounds(
     for (idx, speed) in speeds.iter().rev() {
         if *speed >= speed_threshold {
             consecutive_active += 1;
-            if consecutive_active >= min_activity_points && activity_end_idx.is_none() {
-                activity_end_idx = Some(*idx);
+            if consecutive_active >= min_activity_points {
+                activity_end_idx = Some(*idx + consecutive_active - 1);
+                break;
             }
         } else {
             consecutive_active = 0;
@@ -395,6 +396,43 @@ mod tests {
             end <= points[points.len() - 1].time,
             "End should be within data range"
         );
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_keeps_long_active_tail() {
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:05Z"),
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:10Z"),
+            make_track_point(37.7769, -122.4194, "2023-01-01T10:00:15Z"),
+            make_track_point(37.7779, -122.4194, "2023-01-01T10:00:20Z"),
+            make_track_point(37.7789, -122.4194, "2023-01-01T10:00:25Z"),
+            make_track_point(37.7799, -122.4194, "2023-01-01T10:00:30Z"),
+            make_track_point(37.7809, -122.4194, "2023-01-01T10:00:35Z"),
+        ];
+
+        let (_start, end) = detect_activity_bounds(&points, 5.0, 0).unwrap();
+
+        assert_eq!(end, points[points.len() - 1].time);
+    }
+
+    #[test]
+    fn test_detect_activity_bounds_keeps_active_tail_before_idle_end() {
+        let points = vec![
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:05Z"),
+            make_track_point(37.7759, -122.4194, "2023-01-01T10:00:10Z"),
+            make_track_point(37.7769, -122.4194, "2023-01-01T10:00:15Z"),
+            make_track_point(37.7779, -122.4194, "2023-01-01T10:00:20Z"),
+            make_track_point(37.7789, -122.4194, "2023-01-01T10:00:25Z"),
+            make_track_point(37.7799, -122.4194, "2023-01-01T10:00:30Z"),
+            make_track_point(37.7799, -122.4194, "2023-01-01T10:00:35Z"),
+            make_track_point(37.7799, -122.4194, "2023-01-01T10:00:40Z"),
+        ];
+
+        let (_start, end) = detect_activity_bounds(&points, 5.0, 0).unwrap();
+
+        assert_eq!(end, points[6].time);
     }
 
     #[test]
