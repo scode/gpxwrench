@@ -120,8 +120,8 @@ cat drive.gpx | cargo run -- trim-to-activity -s 5.0 -b 15 > output.gpx
 
 #### Important Notes
 
-- Requires at least 2 track points with valid coordinates and timestamps
-- Uses conservative detection (requires 3+ consecutive points above threshold)
+- Requires at least 2 track points with valid coordinates and timestamps to run
+- Uses conservative detection to confirm activity (requires 3+ consecutive speed intervals at or above threshold, which means 4 points)
 - Errs on the side of inclusion - better to keep too much than cut off activity
 - Preserves all GPX extensions and formatting like the `trim` command
 
