@@ -137,7 +137,7 @@ pub fn detect_activity_bounds(
         if *speed >= speed_threshold {
             consecutive_active += 1;
             if consecutive_active >= min_activity_points && activity_start_idx.is_none() {
-                activity_start_idx = Some(*idx - consecutive_active + 1);
+                activity_start_idx = Some(*idx - consecutive_active);
             }
         } else {
             consecutive_active = 0;
@@ -351,12 +351,7 @@ mod tests {
         assert!(result.is_ok());
         let (start, end) = result.unwrap();
 
-        // Activity detection should trim off the idle portions
-        // Start should be no earlier than the first idle point
-        assert!(
-            start > points[0].time,
-            "Start should be after the first idle point"
-        );
+        assert_eq!(start, points[2].time);
         // End should be no later than the last idle point
         assert!(
             end < points[points.len() - 1].time,
@@ -400,7 +395,7 @@ mod tests {
 
         // The activity detector returns selected point times; the XML writer decides
         // whether the end bound is inclusive for a given command.
-        assert!(start >= points[0].time, "Start should be within data range");
+        assert_eq!(start, points[0].time);
         assert!(
             end <= points[points.len() - 1].time,
             "End should be within data range"
