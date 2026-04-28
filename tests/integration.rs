@@ -1,33 +1,73 @@
 use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
+use time::OffsetDateTime;
 
 fn sample_gpx() -> &'static str {
     include_str!("../samples/activity.gpx")
 }
 
+fn parse_timestamp(timestamp: &str) -> gpx::Time {
+    OffsetDateTime::parse(
+        timestamp,
+        &time::format_description::well_known::Iso8601::DEFAULT,
+    )
+    .unwrap()
+    .into()
+}
+
 #[test]
 fn test_trim_command_duration_range() {
     let mut cmd = cargo_bin_cmd!("gpxwrench");
-    cmd.arg("trim")
+    let output = cmd
+        .arg("trim")
         .arg("10s,40s")
         .write_stdin(sample_gpx())
         .assert()
         .success()
         .stdout(predicate::str::contains("<gpx"))
         .stdout(predicate::str::contains("</gpx>"))
-        .stdout(predicate::str::contains("<trkpt"));
+        .stdout(predicate::str::contains("<trkpt"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let gpx: gpx::Gpx = gpx::read(output.as_slice()).unwrap();
+    let points = &gpx.tracks[0].segments[0].points;
+    let times: Vec<_> = points.iter().map(|point| point.time.unwrap()).collect();
+
+    assert_eq!(
+        times.first(),
+        Some(&parse_timestamp("2023-06-15T10:00:10Z"))
+    );
+    assert_eq!(times.last(), Some(&parse_timestamp("2023-06-15T10:00:35Z")));
+    assert!(!times.contains(&parse_timestamp("2023-06-15T10:00:40Z")));
 }
 
 #[test]
 fn test_trim_command_timestamp_range() {
     let mut cmd = cargo_bin_cmd!("gpxwrench");
-    cmd.arg("trim")
+    let output = cmd
+        .arg("trim")
         .arg("00:10,00:40")
         .write_stdin(sample_gpx())
         .assert()
         .success()
         .stdout(predicate::str::contains("<gpx"))
-        .stdout(predicate::str::contains("</gpx>"));
+        .stdout(predicate::str::contains("</gpx>"))
+        .get_output()
+        .stdout
+        .clone();
+
+    let gpx: gpx::Gpx = gpx::read(output.as_slice()).unwrap();
+    let points = &gpx.tracks[0].segments[0].points;
+    let times: Vec<_> = points.iter().map(|point| point.time.unwrap()).collect();
+
+    assert_eq!(
+        times.first(),
+        Some(&parse_timestamp("2023-06-15T10:00:10Z"))
+    );
+    assert_eq!(times.last(), Some(&parse_timestamp("2023-06-15T10:00:35Z")));
+    assert!(!times.contains(&parse_timestamp("2023-06-15T10:00:40Z")));
 }
 
 #[test]
@@ -137,7 +177,8 @@ fn test_trim_to_activity_removes_idle_portions() {
         .clone();
 
     let trimmed_gpx: gpx::Gpx = gpx::read(output.as_slice()).unwrap();
-    let trimmed_count = trimmed_gpx.tracks[0].segments[0].points.len();
+    let points = &trimmed_gpx.tracks[0].segments[0].points;
+    let trimmed_count = points.len();
 
     // With idle portions at start/end removed, should have fewer points
     assert!(
@@ -145,6 +186,14 @@ fn test_trim_to_activity_removes_idle_portions() {
         "Activity-trimmed GPX should have fewer points: {} < {}",
         trimmed_count,
         full_count
+    );
+    assert_eq!(
+        points.first().and_then(|point| point.time),
+        Some(parse_timestamp("2023-06-15T10:00:05Z"))
+    );
+    assert_eq!(
+        points.last().and_then(|point| point.time),
+        Some(parse_timestamp("2023-06-15T10:01:35Z"))
     );
 }
 
