@@ -664,14 +664,17 @@ mod tests {
         // Points moving at exactly the threshold speed
         let points = vec![
             make_track_point(37.7749, -122.4194, "2023-01-01T10:00:00Z"),
-            make_track_point(37.77494494, -122.4194, "2023-01-01T10:00:05Z"), // ~5m in 5s = 1 m/s
-            make_track_point(37.77498988, -122.4194, "2023-01-01T10:00:10Z"),
-            make_track_point(37.77503482, -122.4194, "2023-01-01T10:00:15Z"),
-            make_track_point(37.77507976, -122.4194, "2023-01-01T10:00:20Z"),
+            make_track_point(37.7749, -122.4194, "2023-01-01T10:00:05Z"),
+            make_track_point(37.77494497, -122.4194, "2023-01-01T10:00:10Z"),
+            make_track_point(37.77498994, -122.4194, "2023-01-01T10:00:15Z"),
+            make_track_point(37.77503491, -122.4194, "2023-01-01T10:00:20Z"),
+            make_track_point(37.77503491, -122.4194, "2023-01-01T10:00:25Z"),
         ];
 
-        // With threshold 1.0, these should count as active (speed >= threshold)
-        let result = detect_activity_bounds(&points, 1.0, 0);
-        assert!(result.is_ok());
+        let threshold = calculate_speed(&points[1], &points[2]);
+        let (start, end) = detect_activity_bounds(&points, threshold, 0).unwrap();
+
+        assert_eq!(start, points[1].time);
+        assert_eq!(end, points[4].time);
     }
 }
