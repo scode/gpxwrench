@@ -1,5 +1,9 @@
 use std::error::Error;
+use std::io::Read;
 use time::{Duration, OffsetDateTime};
+
+pub const MAX_INPUT_BYTES: u64 = 100 * 1024 * 1024;
+pub const MAX_TRACK_POINTS: usize = 1_000_000;
 
 #[derive(Debug, Clone)]
 pub struct TrackPoint {
@@ -12,6 +16,21 @@ pub struct TrackPoint {
 pub enum TrimRange {
     Duration { start: Duration, end: Duration },
     Timestamp { start: Duration, end: Duration },
+}
+
+pub fn read_to_end_limited<R: Read>(reader: R, max_bytes: u64) -> Result<Vec<u8>, Box<dyn Error>> {
+    let read_limit = max_bytes
+        .checked_add(1)
+        .ok_or("Maximum input size is too large to enforce")?;
+    let mut input = Vec::new();
+    let mut limited_reader = reader.take(read_limit);
+    limited_reader.read_to_end(&mut input)?;
+
+    if input.len() as u64 > max_bytes {
+        return Err(format!("Input exceeds maximum supported size of {max_bytes} bytes").into());
+    }
+
+    Ok(input)
 }
 
 pub fn parse_duration(s: &str) -> Result<Duration, Box<dyn Error>> {
@@ -204,6 +223,24 @@ mod tests {
             )
             .unwrap(),
         }
+    }
+
+    #[test]
+    fn test_read_to_end_limited_accepts_input_at_limit() {
+        let input = read_to_end_limited("abc".as_bytes(), 3).unwrap();
+        assert_eq!(input, b"abc");
+    }
+
+    #[test]
+    fn test_read_to_end_limited_rejects_input_past_limit() {
+        let result = read_to_end_limited("abcd".as_bytes(), 3);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_to_end_limited_rejects_unenforceable_limit() {
+        let result = read_to_end_limited("".as_bytes(), u64::MAX);
+        assert!(result.is_err());
     }
 
     #[test]
