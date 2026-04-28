@@ -12,23 +12,21 @@ pub fn trim_command(range_str: &str) -> Result<(), Box<dyn Error>> {
 
     let min_time = find_minimum_time(&input)?;
 
-    if let Some(min_t) = min_time {
+    let (start_threshold, end_threshold) = if let Some(min_t) = min_time {
         let (TrimRange::Duration { start, end } | TrimRange::Timestamp { start, end }) = range;
-        let start_threshold = min_t
-            .checked_add(start)
-            .ok_or("Trim start exceeds supported timestamp range")?;
-        let end_threshold = min_t
-            .checked_add(end)
-            .ok_or("Trim end exceeds supported timestamp range")?;
-
-        filter_xml_by_time_range(&input, start_threshold, end_threshold)?;
+        (
+            min_t
+                .checked_add(start)
+                .ok_or("Trim start exceeds supported timestamp range")?,
+            min_t
+                .checked_add(end)
+                .ok_or("Trim end exceeds supported timestamp range")?,
+        )
     } else {
-        filter_xml_by_time_range(
-            &input,
-            OffsetDateTime::UNIX_EPOCH,
-            OffsetDateTime::UNIX_EPOCH,
-        )?;
-    }
+        (OffsetDateTime::UNIX_EPOCH, OffsetDateTime::UNIX_EPOCH)
+    };
+
+    filter_xml_by_time_range(&input, start_threshold, end_threshold)?;
 
     Ok(())
 }

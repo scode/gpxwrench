@@ -1,9 +1,14 @@
 use gpxwrench::{MAX_TRACK_POINTS, TrackPoint};
 use quick_xml::events::Event;
+use quick_xml::name::QName;
 use quick_xml::{Reader, Writer};
 use std::error::Error;
 use std::io::Write;
 use time::OffsetDateTime;
+
+fn is_element_name(name: QName<'_>, expected_local_name: &[u8]) -> bool {
+    name.local_name().as_ref() == expected_local_name
+}
 
 pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn Error>> {
     let mut reader = Reader::from_reader(input);
@@ -14,6 +19,11 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
     let mut in_time_element = false;
     let mut time_text = String::new();
     let mut element_depth = 0usize;
+    let mut gpx_depth: Option<usize> = None;
+    let mut track_depth: Option<usize> = None;
+    let mut trkseg_depth: Option<usize> = None;
+    let mut trkpt_depth: Option<usize> = None;
+    let mut time_element_depth: Option<usize> = None;
 
     loop {
         let event = match reader.read_event_into(&mut buf) {
@@ -30,33 +40,65 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
         match event {
             Event::Start(ref e) => {
                 element_depth += 1;
-                if e.name().as_ref() == b"trkpt" {
+                if gpx_depth.is_none() && is_element_name(e.name(), b"gpx") {
+                    gpx_depth = Some(element_depth);
+                } else if gpx_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && track_depth.is_none()
+                    && is_element_name(e.name(), b"trk")
+                {
+                    track_depth = Some(element_depth);
+                } else if track_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && trkseg_depth.is_none()
+                    && is_element_name(e.name(), b"trkseg")
+                {
+                    trkseg_depth = Some(element_depth);
+                } else if trkseg_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && trkpt_depth.is_none()
+                    && is_element_name(e.name(), b"trkpt")
+                {
                     in_trkpt = true;
-                } else if in_trkpt && e.name().as_ref() == b"time" {
+                    trkpt_depth = Some(element_depth);
+                } else if in_trkpt
+                    && trkpt_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && is_element_name(e.name(), b"time")
+                {
                     in_time_element = true;
+                    time_element_depth = Some(element_depth);
                     time_text.clear();
                 }
             }
 
             Event::End(ref e) => {
+                if trkpt_depth == Some(element_depth) && is_element_name(e.name(), b"trkpt") {
+                    in_trkpt = false;
+                    trkpt_depth = None;
+                } else if in_trkpt
+                    && in_time_element
+                    && time_element_depth == Some(element_depth)
+                    && is_element_name(e.name(), b"time")
+                {
+                    in_time_element = false;
+                    // Parse the collected time text
+                    if let Ok(parsed_time) = OffsetDateTime::parse(
+                        &time_text,
+                        &time::format_description::well_known::Iso8601::DEFAULT,
+                    ) && min_time.is_none_or(|time| parsed_time < time)
+                    {
+                        min_time = Some(parsed_time);
+                    }
+                    time_element_depth = None;
+                } else if trkseg_depth == Some(element_depth)
+                    && is_element_name(e.name(), b"trkseg")
+                {
+                    trkseg_depth = None;
+                } else if track_depth == Some(element_depth) && is_element_name(e.name(), b"trk") {
+                    track_depth = None;
+                } else if gpx_depth == Some(element_depth) && is_element_name(e.name(), b"gpx") {
+                    gpx_depth = None;
+                }
                 element_depth = element_depth
                     .checked_sub(1)
                     .ok_or("Unexpected closing XML element")?;
-                if e.name().as_ref() == b"trkpt" {
-                    in_trkpt = false;
-                } else if e.name().as_ref() == b"time" && in_trkpt {
-                    in_time_element = false;
-                    // Parse the collected time text
-                    match OffsetDateTime::parse(
-                        &time_text,
-                        &time::format_description::well_known::Iso8601::DEFAULT,
-                    ) {
-                        Ok(parsed_time) if min_time.is_none_or(|t| parsed_time < t) => {
-                            min_time = Some(parsed_time);
-                        }
-                        _ => {}
-                    }
-                }
             }
 
             Event::Text(ref e) => {
@@ -132,6 +174,11 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
     let mut in_trkseg = false;
     let mut just_filtered_trkpt = false;
     let mut element_depth = 0usize;
+    let mut gpx_depth: Option<usize> = None;
+    let mut track_depth: Option<usize> = None;
+    let mut trkseg_depth: Option<usize> = None;
+    let mut trkpt_depth: Option<usize> = None;
+    let mut time_element_depth: Option<usize> = None;
 
     loop {
         let event = match reader.read_event_into(&mut buf) {
@@ -148,11 +195,26 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
         match event {
             Event::Start(ref e) => {
                 element_depth += 1;
-                if e.name().as_ref() == b"trkseg" {
+                if gpx_depth.is_none() && is_element_name(e.name(), b"gpx") {
+                    gpx_depth = Some(element_depth);
+                } else if gpx_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && track_depth.is_none()
+                    && is_element_name(e.name(), b"trk")
+                {
+                    track_depth = Some(element_depth);
+                } else if track_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && trkseg_depth.is_none()
+                    && is_element_name(e.name(), b"trkseg")
+                {
                     in_trkseg = true;
+                    trkseg_depth = Some(element_depth);
                     just_filtered_trkpt = false;
-                } else if e.name().as_ref() == b"trkpt" {
+                } else if trkseg_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && trkpt_depth.is_none()
+                    && is_element_name(e.name(), b"trkpt")
+                {
                     in_trkpt = true;
+                    trkpt_depth = Some(element_depth);
                     trkpt_buffer.clear();
                     trkpt_time = None;
                     time_text.clear();
@@ -160,8 +222,11 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
                 }
 
                 if in_trkpt {
-                    if e.name().as_ref() == b"time" {
+                    if trkpt_depth.is_some_and(|depth| element_depth == depth + 1)
+                        && is_element_name(e.name(), b"time")
+                    {
                         in_time_element = true;
+                        time_element_depth = Some(element_depth);
                         time_text.clear();
                     }
                     trkpt_buffer.push(event.clone());
@@ -171,16 +236,15 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
             }
 
             Event::End(ref e) => {
-                element_depth = element_depth
-                    .checked_sub(1)
-                    .ok_or("Unexpected closing XML element")?;
-                if e.name().as_ref() == b"trkseg" {
+                if trkseg_depth == Some(element_depth) && is_element_name(e.name(), b"trkseg") {
                     in_trkseg = false;
+                    trkseg_depth = None;
                     just_filtered_trkpt = false;
                     writer.write_event(event.clone())?;
-                } else if e.name().as_ref() == b"trkpt" {
+                } else if trkpt_depth == Some(element_depth) && is_element_name(e.name(), b"trkpt")
+                {
                     // Decide whether to include this trkpt based on time range
-                    let include_point = if let Some(point_time) = trkpt_time {
+                    let include_point = trkpt_time.is_some_and(|point_time| {
                         if let Some(end_thresh) = end_threshold {
                             point_time >= start_threshold
                                 && if include_end_threshold {
@@ -191,9 +255,7 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
                         } else {
                             point_time <= start_threshold
                         }
-                    } else {
-                        false // Exclude points without time
-                    };
+                    });
 
                     if include_point {
                         // Write all buffered events for this trkpt
@@ -207,9 +269,13 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
                     }
 
                     in_trkpt = false;
+                    trkpt_depth = None;
                     trkpt_buffer.clear();
                 } else if in_trkpt {
-                    if e.name().as_ref() == b"time" {
+                    if in_time_element
+                        && time_element_depth == Some(element_depth)
+                        && is_element_name(e.name(), b"time")
+                    {
                         in_time_element = false;
                         // Parse the collected time text
                         if let Ok(parsed_time) = OffsetDateTime::parse(
@@ -218,11 +284,21 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
                         ) {
                             trkpt_time = Some(parsed_time);
                         }
+                        time_element_depth = None;
                     }
                     trkpt_buffer.push(event.clone());
                 } else {
                     writer.write_event(event.clone())?;
+                    if track_depth == Some(element_depth) && is_element_name(e.name(), b"trk") {
+                        track_depth = None;
+                    } else if gpx_depth == Some(element_depth) && is_element_name(e.name(), b"gpx")
+                    {
+                        gpx_depth = None;
+                    }
                 }
+                element_depth = element_depth
+                    .checked_sub(1)
+                    .ok_or("Unexpected closing XML element")?;
             }
 
             Event::Text(ref e) => {
@@ -245,7 +321,11 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
                 }
             }
 
-            Event::Empty(ref e) if e.name().as_ref() == b"trkpt" => {
+            Event::Empty(ref e)
+                if trkseg_depth == Some(element_depth)
+                    && trkpt_depth.is_none()
+                    && is_element_name(e.name(), b"trkpt") =>
+            {
                 just_filtered_trkpt = true;
             }
 
@@ -283,6 +363,11 @@ fn extract_track_points_with_limit(
     let mut in_time_element = false;
     let mut time_text = String::new();
     let mut element_depth = 0usize;
+    let mut gpx_depth: Option<usize> = None;
+    let mut track_depth: Option<usize> = None;
+    let mut trkseg_depth: Option<usize> = None;
+    let mut trkpt_depth: Option<usize> = None;
+    let mut time_element_depth: Option<usize> = None;
 
     loop {
         let event = match reader.read_event_into(&mut buf) {
@@ -299,13 +384,30 @@ fn extract_track_points_with_limit(
         match event {
             Event::Start(ref e) => {
                 element_depth += 1;
-                if e.name().as_ref() == b"trkpt" {
+                if gpx_depth.is_none() && is_element_name(e.name(), b"gpx") {
+                    gpx_depth = Some(element_depth);
+                } else if gpx_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && track_depth.is_none()
+                    && is_element_name(e.name(), b"trk")
+                {
+                    track_depth = Some(element_depth);
+                } else if track_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && trkseg_depth.is_none()
+                    && is_element_name(e.name(), b"trkseg")
+                {
+                    trkseg_depth = Some(element_depth);
+                } else if trkseg_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && trkpt_depth.is_none()
+                    && is_element_name(e.name(), b"trkpt")
+                {
                     in_trkpt = true;
+                    trkpt_depth = Some(element_depth);
                     current_lat = None;
                     current_lon = None;
                     current_time = None;
 
-                    for attr in e.attributes().flatten() {
+                    for attr in e.attributes() {
+                        let attr = attr?;
                         match attr.key.as_ref() {
                             b"lat" => {
                                 if let Ok(lat_str) = std::str::from_utf8(&attr.value) {
@@ -320,17 +422,18 @@ fn extract_track_points_with_limit(
                             _ => {}
                         }
                     }
-                } else if in_trkpt && e.name().as_ref() == b"time" {
+                } else if in_trkpt
+                    && trkpt_depth.is_some_and(|depth| element_depth == depth + 1)
+                    && is_element_name(e.name(), b"time")
+                {
                     in_time_element = true;
+                    time_element_depth = Some(element_depth);
                     time_text.clear();
                 }
             }
 
             Event::End(ref e) => {
-                element_depth = element_depth
-                    .checked_sub(1)
-                    .ok_or("Unexpected closing XML element")?;
-                if e.name().as_ref() == b"trkpt" {
+                if trkpt_depth == Some(element_depth) && is_element_name(e.name(), b"trkpt") {
                     if let (Some(lat), Some(lon), Some(time)) =
                         (current_lat, current_lon, current_time)
                     {
@@ -343,7 +446,12 @@ fn extract_track_points_with_limit(
                         track_points.push(TrackPoint { lat, lon, time });
                     }
                     in_trkpt = false;
-                } else if e.name().as_ref() == b"time" && in_trkpt {
+                    trkpt_depth = None;
+                } else if in_trkpt
+                    && in_time_element
+                    && time_element_depth == Some(element_depth)
+                    && is_element_name(e.name(), b"time")
+                {
                     in_time_element = false;
                     if let Ok(parsed_time) = OffsetDateTime::parse(
                         &time_text,
@@ -351,7 +459,19 @@ fn extract_track_points_with_limit(
                     ) {
                         current_time = Some(parsed_time);
                     }
+                    time_element_depth = None;
+                } else if trkseg_depth == Some(element_depth)
+                    && is_element_name(e.name(), b"trkseg")
+                {
+                    trkseg_depth = None;
+                } else if track_depth == Some(element_depth) && is_element_name(e.name(), b"trk") {
+                    track_depth = None;
+                } else if gpx_depth == Some(element_depth) && is_element_name(e.name(), b"gpx") {
+                    gpx_depth = None;
                 }
+                element_depth = element_depth
+                    .checked_sub(1)
+                    .ok_or("Unexpected closing XML element")?;
             }
 
             Event::Text(ref e) => {
@@ -520,6 +640,297 @@ mod tests {
         assert_eq!(result.unwrap(), parse_timestamp("2023-01-01T10:00:00Z"));
     }
 
+    #[test]
+    fn test_prefixed_gpx_elements_are_matched_by_local_name() {
+        use gpx::{Gpx, read};
+
+        let prefixed_gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx:gpx version="1.1" creator="test" xmlns:gpx="http://www.topografix.com/GPX/1/1">
+  <gpx:trk>
+    <gpx:trkseg>
+      <gpx:trkpt lat="37.7749" lon="-122.4194">
+        <gpx:time>2023-01-01T10:00:00Z</gpx:time>
+      </gpx:trkpt>
+      <gpx:trkpt lat="37.7750" lon="-122.4195">
+        <gpx:time>2023-01-01T10:00:05Z</gpx:time>
+      </gpx:trkpt>
+    </gpx:trkseg>
+  </gpx:trk>
+</gpx:gpx>"#;
+
+        let min_time = find_minimum_time(prefixed_gpx.as_bytes()).unwrap();
+        let track_points = extract_track_points(prefixed_gpx.as_bytes()).unwrap();
+
+        assert_eq!(min_time, Some(parse_timestamp("2023-01-01T10:00:00Z")));
+        assert_eq!(track_points.len(), 2);
+
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(
+            prefixed_gpx.as_bytes(),
+            parse_timestamp("2023-01-01T10:00:00Z"),
+            Some(parse_timestamp("2023-01-01T10:00:01Z")),
+            &mut output,
+        )
+        .unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        assert_eq!(gpx.tracks[0].segments[0].points.len(), 1);
+    }
+
+    #[test]
+    fn test_nested_extension_time_does_not_replace_track_point_time() {
+        let gpx_with_extension_time = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+        <extensions>
+          <vendor:metadata xmlns:vendor="https://example.com/vendor">
+            <vendor:time>2023-01-01T11:00:00Z</vendor:time>
+          </vendor:metadata>
+        </extensions>
+      </trkpt>
+      <trkpt lat="37.7750" lon="-122.4195">
+        <time>2023-01-01T10:00:05Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let min_time = find_minimum_time(gpx_with_extension_time.as_bytes()).unwrap();
+        let track_points = extract_track_points(gpx_with_extension_time.as_bytes()).unwrap();
+
+        assert_eq!(min_time, Some(parse_timestamp("2023-01-01T10:00:00Z")));
+        assert_eq!(
+            track_points[0].time,
+            parse_timestamp("2023-01-01T10:00:00Z")
+        );
+    }
+
+    #[test]
+    fn test_filtering_uses_direct_track_point_time_not_extension_time() {
+        use gpx::{Gpx, read};
+
+        let gpx_with_extension_time = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+        <extensions>
+          <vendor:metadata xmlns:vendor="https://example.com/vendor">
+            <vendor:time>2023-01-01T11:00:00Z</vendor:time>
+          </vendor:metadata>
+        </extensions>
+      </trkpt>
+      <trkpt lat="37.7750" lon="-122.4195">
+        <time>2023-01-01T10:00:05Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+        let start = parse_timestamp("2023-01-01T09:59:59Z");
+        let end = parse_timestamp("2023-01-01T10:00:01Z");
+
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(
+            gpx_with_extension_time.as_bytes(),
+            start,
+            Some(end),
+            &mut output,
+        )
+        .unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        assert_eq!(gpx.tracks[0].segments[0].points.len(), 1);
+        assert_eq!(
+            gpx.tracks[0].segments[0].points[0].time.unwrap(),
+            parse_timestamp("2023-01-01T10:00:00Z").into()
+        );
+    }
+
+    #[test]
+    fn test_extension_only_time_is_not_treated_as_track_point_time() {
+        use gpx::{Gpx, read};
+
+        let gpx_with_extension_only_time = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <extensions>
+          <vendor:metadata xmlns:vendor="https://example.com/vendor">
+            <vendor:time>2023-01-01T10:00:00Z</vendor:time>
+          </vendor:metadata>
+        </extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+        let start = parse_timestamp("2023-01-01T09:59:59Z");
+        let end = parse_timestamp("2023-01-01T10:00:01Z");
+
+        let min_time = find_minimum_time(gpx_with_extension_only_time.as_bytes()).unwrap();
+        let track_points = extract_track_points(gpx_with_extension_only_time.as_bytes()).unwrap();
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(
+            gpx_with_extension_only_time.as_bytes(),
+            start,
+            Some(end),
+            &mut output,
+        )
+        .unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        assert_eq!(min_time, None);
+        assert!(track_points.is_empty());
+        assert_eq!(gpx.tracks[0].segments[0].points.len(), 0);
+    }
+
+    #[test]
+    fn test_nested_extension_trkpt_does_not_replace_outer_track_point() {
+        use gpx::{Gpx, read};
+
+        let gpx_with_nested_extension_point = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+        <extensions>
+          <vendor:trkpt xmlns:vendor="https://example.com/vendor">
+            <vendor:time>2023-01-01T11:00:00Z</vendor:time>
+          </vendor:trkpt>
+        </extensions>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+        let start = parse_timestamp("2023-01-01T09:59:59Z");
+        let end = parse_timestamp("2023-01-01T10:00:01Z");
+
+        let min_time = find_minimum_time(gpx_with_nested_extension_point.as_bytes()).unwrap();
+        let track_points =
+            extract_track_points(gpx_with_nested_extension_point.as_bytes()).unwrap();
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(
+            gpx_with_nested_extension_point.as_bytes(),
+            start,
+            Some(end),
+            &mut output,
+        )
+        .unwrap();
+
+        let gpx: Gpx = read(output.as_slice()).unwrap();
+        assert_eq!(min_time, Some(parse_timestamp("2023-01-01T10:00:00Z")));
+        assert_eq!(track_points.len(), 1);
+        assert_eq!(
+            track_points[0].time,
+            parse_timestamp("2023-01-01T10:00:00Z")
+        );
+        assert_eq!(gpx.tracks[0].segments[0].points.len(), 1);
+    }
+
+    #[test]
+    fn test_segment_extension_trkpt_is_preserved_as_extension_data() {
+        let gpx_with_segment_extension_point = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <extensions>
+        <vendor:trkpt xmlns:vendor="https://example.com/vendor">
+          <vendor:time>2023-01-01T09:00:00Z</vendor:time>
+        </vendor:trkpt>
+      </extensions>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+        let start = parse_timestamp("2023-01-01T09:59:59Z");
+        let end = parse_timestamp("2023-01-01T10:00:01Z");
+
+        let min_time = find_minimum_time(gpx_with_segment_extension_point.as_bytes()).unwrap();
+        let track_points =
+            extract_track_points(gpx_with_segment_extension_point.as_bytes()).unwrap();
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(
+            gpx_with_segment_extension_point.as_bytes(),
+            start,
+            Some(end),
+            &mut output,
+        )
+        .unwrap();
+        let output_text = std::str::from_utf8(&output).unwrap();
+
+        assert_eq!(min_time, Some(parse_timestamp("2023-01-01T10:00:00Z")));
+        assert_eq!(track_points.len(), 1);
+        assert!(output_text.contains("<vendor:trkpt"));
+        assert!(output_text.contains("<vendor:time>2023-01-01T09:00:00Z</vendor:time>"));
+    }
+
+    #[test]
+    fn test_non_track_extension_trkseg_is_not_treated_as_track_segment() {
+        let gpx_with_metadata_extension = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <metadata>
+    <extensions>
+      <vendor:trkseg xmlns:vendor="https://example.com/vendor">
+        <vendor:trkpt lat="1.0" lon="2.0">
+          <vendor:time>2023-01-01T09:00:00Z</vendor:time>
+        </vendor:trkpt>
+      </vendor:trkseg>
+    </extensions>
+  </metadata>
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+        let start = parse_timestamp("2023-01-01T09:59:59Z");
+        let end = parse_timestamp("2023-01-01T10:00:01Z");
+
+        let min_time = find_minimum_time(gpx_with_metadata_extension.as_bytes()).unwrap();
+        let track_points = extract_track_points(gpx_with_metadata_extension.as_bytes()).unwrap();
+        let mut output = Vec::new();
+        filter_xml_by_time_to_writer(
+            gpx_with_metadata_extension.as_bytes(),
+            start,
+            Some(end),
+            &mut output,
+        )
+        .unwrap();
+        let output_text = std::str::from_utf8(&output).unwrap();
+
+        assert_eq!(min_time, Some(parse_timestamp("2023-01-01T10:00:00Z")));
+        assert_eq!(track_points.len(), 1);
+        assert!(output_text.contains("<vendor:trkseg"));
+        assert!(output_text.contains("<vendor:trkpt"));
+    }
+
+    #[test]
+    fn test_extract_track_points_rejects_malformed_attributes() {
+        let malformed_gpx = r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749 lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let result = extract_track_points(malformed_gpx.as_bytes());
+
+        assert!(result.is_err());
+    }
+
     /// Tests that filter_xml_by_time produces valid GPX output that can be parsed by the GPX crate.
     #[test]
     fn test_filter_xml_by_time_validates_with_gpx_crate() {
@@ -562,6 +973,9 @@ mod tests {
             &mut output,
         )
         .unwrap();
+        let output_text = std::str::from_utf8(&output).unwrap();
+        assert!(output_text.contains("<ns3:hr>150</ns3:hr>"));
+        assert!(output_text.contains("<ns3:hr>155</ns3:hr>"));
 
         // Verify the output parses correctly with GPX crate
         let gpx_result: Result<Gpx, _> = read(output.as_slice());

@@ -169,10 +169,8 @@ pub fn detect_activity_bounds(
                 current_run_start_idx = point_idx - 1;
             }
             consecutive_active += 1;
-            if consecutive_active >= min_activity_points && activity_start_idx.is_none() {
-                activity_start_idx = Some(current_run_start_idx);
-            }
             if consecutive_active >= min_activity_points {
+                activity_start_idx.get_or_insert(current_run_start_idx);
                 activity_end_idx = Some(point_idx);
             }
         } else {

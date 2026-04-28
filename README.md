@@ -37,8 +37,8 @@ cat samples/activity.gpx | cargo run -- trim 0s,30s > output.gpx
 # Keep data from 5 seconds to 1 minute after the start
 cat samples/activity.gpx | cargo run -- trim 5s,1m > output.gpx
 
-# Keep data from 15 seconds to 45 seconds (covers the main activity)
-cat samples/activity.gpx | cargo run -- trim 15s,45s > output.gpx
+# Keep data from 5 seconds to 100 seconds (covers the main activity)
+cat samples/activity.gpx | cargo run -- trim 5s,100s > output.gpx
 
 # You can also use your own GPX files
 cat your-track.gpx | cargo run -- trim 1h,2h > output.gpx
@@ -52,8 +52,8 @@ Timestamp format uses `TS1,TS2` where each timestamp is in `MM:SS` or `HH:MM:SS`
 # Keep data from 0:05 (5 seconds) to 1:30 (1 minute 30 seconds) after start
 cat samples/activity.gpx | cargo run -- trim 00:05,01:30 > output.gpx
 
-# Keep data from 0:15 to 0:45 (main activity period)
-cat samples/activity.gpx | cargo run -- trim 00:15,00:45 > output.gpx
+# Keep data from 0:05 to 1:40 (main activity period)
+cat samples/activity.gpx | cargo run -- trim 00:05,01:40 > output.gpx
 
 # You can also use longer timestamp formats for longer tracks
 cat longer-track.gpx | cargo run -- trim 01:02:30,02:15:45 > output.gpx
@@ -74,7 +74,7 @@ The `trim-to-activity` command automatically detects periods of activity in GPX 
 #### How It Works
 
 1. **Speed Analysis**: Calculates speed between consecutive GPS points using the haversine formula
-2. **Activity Detection**: Identifies periods where speed consistently exceeds the threshold
+2. **Activity Detection**: Identifies periods where speed is consistently at or above the threshold
 3. **Conservative Trimming**: Adds buffer time before/after detected activity to avoid cutting off important data
 4. **Single Activity**: Designed for tracks with one main activity period
 
@@ -133,5 +133,5 @@ cat drive.gpx | cargo run -- trim-to-activity -s 5.0 -b 15 > output.gpx
 cargo build
 cargo test
 cargo fmt
-cargo clippy
+cargo clippy -- -D warnings
 ```
