@@ -6,7 +6,9 @@ use std::error::Error;
 use std::io::Write;
 use time::OffsetDateTime;
 
-fn is_element_name(name: QName<'_>, expected_local_name: &[u8]) -> bool {
+/// Match an element by its local name, ignoring any namespace prefix so that `<gpx:trkpt>` and
+/// `<trkpt>` are treated alike.
+fn is_element_name(name: QName<'_>, expected_local_name: &str) -> bool {
     name.local_name().as_ref() == expected_local_name
 }
 
@@ -40,27 +42,27 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
         match event {
             Event::Start(ref e) => {
                 element_depth += 1;
-                if gpx_depth.is_none() && is_element_name(e.name(), b"gpx") {
+                if gpx_depth.is_none() && is_element_name(e.name(), "gpx") {
                     gpx_depth = Some(element_depth);
                 } else if gpx_depth.is_some_and(|depth| element_depth == depth + 1)
                     && track_depth.is_none()
-                    && is_element_name(e.name(), b"trk")
+                    && is_element_name(e.name(), "trk")
                 {
                     track_depth = Some(element_depth);
                 } else if track_depth.is_some_and(|depth| element_depth == depth + 1)
                     && trkseg_depth.is_none()
-                    && is_element_name(e.name(), b"trkseg")
+                    && is_element_name(e.name(), "trkseg")
                 {
                     trkseg_depth = Some(element_depth);
                 } else if trkseg_depth.is_some_and(|depth| element_depth == depth + 1)
                     && trkpt_depth.is_none()
-                    && is_element_name(e.name(), b"trkpt")
+                    && is_element_name(e.name(), "trkpt")
                 {
                     in_trkpt = true;
                     trkpt_depth = Some(element_depth);
                 } else if in_trkpt
                     && trkpt_depth.is_some_and(|depth| element_depth == depth + 1)
-                    && is_element_name(e.name(), b"time")
+                    && is_element_name(e.name(), "time")
                 {
                     in_time_element = true;
                     time_element_depth = Some(element_depth);
@@ -69,13 +71,13 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
             }
 
             Event::End(ref e) => {
-                if trkpt_depth == Some(element_depth) && is_element_name(e.name(), b"trkpt") {
+                if trkpt_depth == Some(element_depth) && is_element_name(e.name(), "trkpt") {
                     in_trkpt = false;
                     trkpt_depth = None;
                 } else if in_trkpt
                     && in_time_element
                     && time_element_depth == Some(element_depth)
-                    && is_element_name(e.name(), b"time")
+                    && is_element_name(e.name(), "time")
                 {
                     in_time_element = false;
                     // Parse the collected time text
@@ -87,13 +89,12 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
                         min_time = Some(parsed_time);
                     }
                     time_element_depth = None;
-                } else if trkseg_depth == Some(element_depth)
-                    && is_element_name(e.name(), b"trkseg")
+                } else if trkseg_depth == Some(element_depth) && is_element_name(e.name(), "trkseg")
                 {
                     trkseg_depth = None;
-                } else if track_depth == Some(element_depth) && is_element_name(e.name(), b"trk") {
+                } else if track_depth == Some(element_depth) && is_element_name(e.name(), "trk") {
                     track_depth = None;
-                } else if gpx_depth == Some(element_depth) && is_element_name(e.name(), b"gpx") {
+                } else if gpx_depth == Some(element_depth) && is_element_name(e.name(), "gpx") {
                     gpx_depth = None;
                 }
                 element_depth = element_depth
@@ -101,13 +102,8 @@ pub fn find_minimum_time(input: &[u8]) -> Result<Option<OffsetDateTime>, Box<dyn
                     .ok_or("Unexpected closing XML element")?;
             }
 
-            Event::Text(ref e) => {
-                if in_trkpt
-                    && in_time_element
-                    && let Ok(text) = std::str::from_utf8(e)
-                {
-                    time_text.push_str(text);
-                }
+            Event::Text(ref e) if in_trkpt && in_time_element => {
+                time_text.push_str(e);
             }
 
             _ => {}
@@ -195,23 +191,23 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
         match event {
             Event::Start(ref e) => {
                 element_depth += 1;
-                if gpx_depth.is_none() && is_element_name(e.name(), b"gpx") {
+                if gpx_depth.is_none() && is_element_name(e.name(), "gpx") {
                     gpx_depth = Some(element_depth);
                 } else if gpx_depth.is_some_and(|depth| element_depth == depth + 1)
                     && track_depth.is_none()
-                    && is_element_name(e.name(), b"trk")
+                    && is_element_name(e.name(), "trk")
                 {
                     track_depth = Some(element_depth);
                 } else if track_depth.is_some_and(|depth| element_depth == depth + 1)
                     && trkseg_depth.is_none()
-                    && is_element_name(e.name(), b"trkseg")
+                    && is_element_name(e.name(), "trkseg")
                 {
                     in_trkseg = true;
                     trkseg_depth = Some(element_depth);
                     just_filtered_trkpt = false;
                 } else if trkseg_depth.is_some_and(|depth| element_depth == depth + 1)
                     && trkpt_depth.is_none()
-                    && is_element_name(e.name(), b"trkpt")
+                    && is_element_name(e.name(), "trkpt")
                 {
                     in_trkpt = true;
                     trkpt_depth = Some(element_depth);
@@ -223,7 +219,7 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
 
                 if in_trkpt {
                     if trkpt_depth.is_some_and(|depth| element_depth == depth + 1)
-                        && is_element_name(e.name(), b"time")
+                        && is_element_name(e.name(), "time")
                     {
                         in_time_element = true;
                         time_element_depth = Some(element_depth);
@@ -236,13 +232,12 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
             }
 
             Event::End(ref e) => {
-                if trkseg_depth == Some(element_depth) && is_element_name(e.name(), b"trkseg") {
+                if trkseg_depth == Some(element_depth) && is_element_name(e.name(), "trkseg") {
                     in_trkseg = false;
                     trkseg_depth = None;
                     just_filtered_trkpt = false;
                     writer.write_event(event.clone())?;
-                } else if trkpt_depth == Some(element_depth) && is_element_name(e.name(), b"trkpt")
-                {
+                } else if trkpt_depth == Some(element_depth) && is_element_name(e.name(), "trkpt") {
                     // Decide whether to include this trkpt based on time range
                     let include_point = trkpt_time.is_some_and(|point_time| {
                         if let Some(end_thresh) = end_threshold {
@@ -274,7 +269,7 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
                 } else if in_trkpt {
                     if in_time_element
                         && time_element_depth == Some(element_depth)
-                        && is_element_name(e.name(), b"time")
+                        && is_element_name(e.name(), "time")
                     {
                         in_time_element = false;
                         // Parse the collected time text
@@ -289,10 +284,9 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
                     trkpt_buffer.push(event.clone());
                 } else {
                     writer.write_event(event.clone())?;
-                    if track_depth == Some(element_depth) && is_element_name(e.name(), b"trk") {
+                    if track_depth == Some(element_depth) && is_element_name(e.name(), "trk") {
                         track_depth = None;
-                    } else if gpx_depth == Some(element_depth) && is_element_name(e.name(), b"gpx")
-                    {
+                    } else if gpx_depth == Some(element_depth) && is_element_name(e.name(), "gpx") {
                         gpx_depth = None;
                     }
                 }
@@ -303,13 +297,13 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
 
             Event::Text(ref e) => {
                 if in_trkpt {
-                    if in_time_element && let Ok(text) = std::str::from_utf8(e) {
-                        time_text.push_str(text);
+                    if in_time_element {
+                        time_text.push_str(e);
                     }
                     trkpt_buffer.push(event.clone());
                 } else {
                     // Skip whitespace-only text nodes after filtered track points within track segments
-                    let is_whitespace_only = e.iter().all(|&b| b.is_ascii_whitespace());
+                    let is_whitespace_only = e.bytes().all(|b| b.is_ascii_whitespace());
                     if in_trkseg && just_filtered_trkpt && is_whitespace_only {
                         // Skip this whitespace text node
                     } else {
@@ -324,7 +318,7 @@ fn filter_xml_by_time_to_writer_with_end_mode<W: Write>(
             Event::Empty(ref e)
                 if trkseg_depth == Some(element_depth)
                     && trkpt_depth.is_none()
-                    && is_element_name(e.name(), b"trkpt") =>
+                    && is_element_name(e.name(), "trkpt") =>
             {
                 just_filtered_trkpt = true;
             }
@@ -384,21 +378,21 @@ fn extract_track_points_with_limit(
         match event {
             Event::Start(ref e) => {
                 element_depth += 1;
-                if gpx_depth.is_none() && is_element_name(e.name(), b"gpx") {
+                if gpx_depth.is_none() && is_element_name(e.name(), "gpx") {
                     gpx_depth = Some(element_depth);
                 } else if gpx_depth.is_some_and(|depth| element_depth == depth + 1)
                     && track_depth.is_none()
-                    && is_element_name(e.name(), b"trk")
+                    && is_element_name(e.name(), "trk")
                 {
                     track_depth = Some(element_depth);
                 } else if track_depth.is_some_and(|depth| element_depth == depth + 1)
                     && trkseg_depth.is_none()
-                    && is_element_name(e.name(), b"trkseg")
+                    && is_element_name(e.name(), "trkseg")
                 {
                     trkseg_depth = Some(element_depth);
                 } else if trkseg_depth.is_some_and(|depth| element_depth == depth + 1)
                     && trkpt_depth.is_none()
-                    && is_element_name(e.name(), b"trkpt")
+                    && is_element_name(e.name(), "trkpt")
                 {
                     in_trkpt = true;
                     trkpt_depth = Some(element_depth);
@@ -409,22 +403,14 @@ fn extract_track_points_with_limit(
                     for attr in e.attributes() {
                         let attr = attr?;
                         match attr.key.as_ref() {
-                            b"lat" => {
-                                if let Ok(lat_str) = std::str::from_utf8(&attr.value) {
-                                    current_lat = lat_str.parse().ok();
-                                }
-                            }
-                            b"lon" => {
-                                if let Ok(lon_str) = std::str::from_utf8(&attr.value) {
-                                    current_lon = lon_str.parse().ok();
-                                }
-                            }
+                            "lat" => current_lat = attr.value.parse().ok(),
+                            "lon" => current_lon = attr.value.parse().ok(),
                             _ => {}
                         }
                     }
                 } else if in_trkpt
                     && trkpt_depth.is_some_and(|depth| element_depth == depth + 1)
-                    && is_element_name(e.name(), b"time")
+                    && is_element_name(e.name(), "time")
                 {
                     in_time_element = true;
                     time_element_depth = Some(element_depth);
@@ -433,7 +419,7 @@ fn extract_track_points_with_limit(
             }
 
             Event::End(ref e) => {
-                if trkpt_depth == Some(element_depth) && is_element_name(e.name(), b"trkpt") {
+                if trkpt_depth == Some(element_depth) && is_element_name(e.name(), "trkpt") {
                     if let (Some(lat), Some(lon), Some(time)) =
                         (current_lat, current_lon, current_time)
                     {
@@ -450,7 +436,7 @@ fn extract_track_points_with_limit(
                 } else if in_trkpt
                     && in_time_element
                     && time_element_depth == Some(element_depth)
-                    && is_element_name(e.name(), b"time")
+                    && is_element_name(e.name(), "time")
                 {
                     in_time_element = false;
                     if let Ok(parsed_time) = OffsetDateTime::parse(
@@ -460,13 +446,12 @@ fn extract_track_points_with_limit(
                         current_time = Some(parsed_time);
                     }
                     time_element_depth = None;
-                } else if trkseg_depth == Some(element_depth)
-                    && is_element_name(e.name(), b"trkseg")
+                } else if trkseg_depth == Some(element_depth) && is_element_name(e.name(), "trkseg")
                 {
                     trkseg_depth = None;
-                } else if track_depth == Some(element_depth) && is_element_name(e.name(), b"trk") {
+                } else if track_depth == Some(element_depth) && is_element_name(e.name(), "trk") {
                     track_depth = None;
-                } else if gpx_depth == Some(element_depth) && is_element_name(e.name(), b"gpx") {
+                } else if gpx_depth == Some(element_depth) && is_element_name(e.name(), "gpx") {
                     gpx_depth = None;
                 }
                 element_depth = element_depth
@@ -474,13 +459,8 @@ fn extract_track_points_with_limit(
                     .ok_or("Unexpected closing XML element")?;
             }
 
-            Event::Text(ref e) => {
-                if in_trkpt
-                    && in_time_element
-                    && let Ok(text) = std::str::from_utf8(e)
-                {
-                    time_text.push_str(text);
-                }
+            Event::Text(ref e) if in_trkpt && in_time_element => {
+                time_text.push_str(e);
             }
 
             _ => {}
@@ -929,6 +909,59 @@ mod tests {
         let result = extract_track_points(malformed_gpx.as_bytes());
 
         assert!(result.is_err());
+    }
+
+    /// Pins the I/O contract that input must be valid UTF-8, which is a consequence of quick-xml
+    /// 0.42 validating the bytes itself. Before that version invalid bytes in text the tool never
+    /// inspects were copied through untouched, so this test exists to make any future change back
+    /// to lenient behavior a deliberate one.
+    ///
+    /// Spec: every entry point rejects a document containing an invalid UTF-8 byte, even when that
+    /// byte sits in an element the tool does not read. A byte-string literal is used because a
+    /// `str` literal cannot hold invalid UTF-8.
+    #[test]
+    fn test_all_entry_points_reject_invalid_utf8() {
+        let latin1_gpx: &[u8] = b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<gpx version=\"1.1\" creator=\"test\">
+  <trk>
+    <trkseg>
+      <trkpt lat=\"37.7749\" lon=\"-122.4194\">
+        <time>2023-01-01T10:00:00Z</time>
+        <name>caf\xe9</name>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>";
+
+        assert!(find_minimum_time(latin1_gpx).is_err());
+        assert!(extract_track_points(latin1_gpx).is_err());
+
+        let threshold = parse_timestamp("2023-01-01T09:00:00Z");
+        let mut output = Vec::new();
+        assert!(filter_xml_by_time_to_writer(latin1_gpx, threshold, None, &mut output).is_err());
+    }
+
+    /// Pins the other half of the UTF-8 contract: the XML declaration's `encoding` attribute is
+    /// ignored and only the bytes matter, so a file that declares ISO-8859-1 but contains only
+    /// ASCII parses fine. Without this a reader of the rejection test above could reasonably
+    /// assume declared non-UTF-8 encodings are rejected outright.
+    #[test]
+    fn test_declared_latin1_with_ascii_content_is_accepted() {
+        let declared_latin1_gpx = r#"<?xml version="1.0" encoding="ISO-8859-1"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="37.7749" lon="-122.4194">
+        <time>2023-01-01T10:00:00Z</time>
+        <name>cafe</name>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"#;
+
+        let min_time = find_minimum_time(declared_latin1_gpx.as_bytes()).unwrap();
+
+        assert_eq!(min_time, Some(parse_timestamp("2023-01-01T10:00:00Z")));
     }
 
     /// Tests that filter_xml_by_time produces valid GPX output that can be parsed by the GPX crate.
