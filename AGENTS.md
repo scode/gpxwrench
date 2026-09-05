@@ -23,6 +23,9 @@ Primary user docs and examples live in `README.md`.
 ### Core concepts and invariants
 - I/O contract:
   - Read full GPX from stdin, write resulting GPX to stdout; print errors to stderr, exit non-zero on failure.
+  - Input must be valid UTF-8. `quick-xml` (0.42 and later) validates the bytes while parsing and rejects anything
+    else with an error, even in text nodes the tool never inspects. The XML declaration's `encoding` attribute is
+    ignored, so an ASCII-only file declaring ISO-8859-1 passes. A leading UTF-8 BOM is accepted and not written back.
   - Avoid interactive prompts; be scriptable.
 - Time ranges are relative to the earliest track point timestamp.
 - Manual trim ranges are inclusive of start and exclusive of end: [start, end).
